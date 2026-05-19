@@ -1,0 +1,14 @@
+{
+  "name": "roadwatch-ai",
+  "version": "4.0.0",
+  "description": "RoadWatch AI – Smart Road Intelligence System",
+  "private": true,
+  "scripts": {
+    "install:all":    "cd frontend && npm install && cd ../backend && npm install",
+    "dev:frontend":   "cd frontend && npm run dev",
+    "dev:backend":    "cd backend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "seed":           "cd backend && node src/seed.js",
+    "ai":             "cd ai-service && uvicorn main:app --host 0.0.0.0 --port 8000"
+  }
+}
