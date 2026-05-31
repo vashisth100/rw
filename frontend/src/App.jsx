@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { motion, AnimatePresence, useInView } from 'framer-motion'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts'
 import { useAuth } from './context/AuthContext'
 import LeafletMapView from './components/LeafletMapView'
 import AIDetectionCanvas from './components/AIDetectionCanvas'
@@ -10,147 +10,258 @@ import PredictiveMaintenance from './components/PredictiveMaintenance'
 import { runDemoAI } from './data/demoDetections'
 import { api } from './hooks/useApi'
 
-// ── FALLBACK seed data (shown instantly, no backend needed) ───────────────────
+// ── Design tokens ─────────────────────────────────────────────────────────────
+const C = {
+  bg:'#020914', bg1:'#060f1e', bg2:'#0a1628', bg3:'#0f1e35',
+  cyan:'#00d4ff', cyan2:'rgba(0,212,255,0.12)', cyan3:'rgba(0,212,255,0.06)',
+  orange:'#ff6b35', green:'#00e676', red:'#ff3d5a', amber:'#ffaa00', purple:'#a78bfa',
+  bdr:'rgba(0,212,255,0.12)', bdr2:'rgba(255,255,255,0.06)',
+  tx1:'#e8f4fd', tx2:'rgba(180,210,240,0.6)', tx3:'rgba(100,150,200,0.35)',
+}
+const rc = s => s>=71?C.red:s>=31?C.amber:C.green
+
+// ── Seed fallback data (instant, no backend) ──────────────────────────────────
 const SEED = [
-  {_id:'s1',location:{name:'NH-48 Mahipalpur, New Delhi',lat:28.5355,lng:77.1190},type:'Pothole',severity:'high',  riskScore:92,confidence:0.94,status:'Reported',   reporter:'Vikram S.',  city:'Delhi',    ward:'Mahipalpur Ward',  councillor:'Rajesh Gupta',  repairCost:82000,createdAt:'2024-03-10'},
-  {_id:'s2',location:{name:'Ring Road, Lajpat Nagar',    lat:28.5665,lng:77.2431},type:'Pothole',severity:'high',  riskScore:88,confidence:0.94,status:'Reported',   reporter:'Priya M.',   city:'Delhi',    ward:'Lajpat Nagar Ward',councillor:'Sunita Sharma', repairCost:74000,createdAt:'2024-03-08'},
-  {_id:'s3',location:{name:'Eastern Exp Hwy, Kurla',     lat:19.0725,lng:72.8851},type:'Pothole',severity:'high',  riskScore:89,confidence:0.94,status:'Reported',   reporter:'Vijay P.',   city:'Mumbai',   ward:'Kurla Ward',       councillor:'Santosh Patil', repairCost:76000,createdAt:'2024-03-07'},
-  {_id:'s4',location:{name:'Outer Ring Road, Marathahalli',lat:12.9591,lng:77.6974},type:'Pothole',severity:'high',riskScore:91,confidence:0.96,status:'In Progress', reporter:'Suresh K.',  city:'Bengaluru',ward:'Marathahalli Ward',councillor:'B.R. Nagaraj',  repairCost:81000,createdAt:'2024-03-06'},
-  {_id:'s5',location:{name:'Banjara Hills Road No.12',   lat:17.4126,lng:78.4438},type:'Pothole',severity:'high',  riskScore:89,confidence:0.95,status:'Reported',   reporter:'Lakshmi T.', city:'Hyderabad',ward:'Banjara Hills Ward',councillor:'Kalvakuntla S.',repairCost:77000,createdAt:'2024-03-05'},
-  {_id:'s6',location:{name:'Anna Salai, Teynampet',      lat:13.0418,lng:80.2341},type:'Pothole',severity:'high',  riskScore:83,confidence:0.92,status:'Reported',   reporter:'Murugan S.', city:'Chennai',  ward:'Teynampet Ward',   councillor:'R. Natarajan',  repairCost:60000,createdAt:'2024-03-04'},
-  {_id:'s7',location:{name:'EM Bypass, Kasba',           lat:22.5124,lng:88.3890},type:'Pothole',severity:'high',  riskScore:88,confidence:0.94,status:'Reported',   reporter:'Debashis M.',city:'Kolkata',  ward:'Kasba Ward',       councillor:'Subrata Das',   repairCost:73000,createdAt:'2024-03-03'},
-  {_id:'s8',location:{name:'MG Road, Connaught Place',   lat:28.6314,lng:77.2167},type:'Crack',  severity:'medium',riskScore:55,confidence:0.82,status:'In Progress', reporter:'Neha R.',    city:'Delhi',    ward:'CP Ward',          councillor:'Deepak Jain',   repairCost:18000,createdAt:'2024-03-02'},
-  {_id:'s9',location:{name:'Outer Ring Road, Munirka',   lat:28.5527,lng:77.1718},type:'Crack',  severity:'high',  riskScore:79,confidence:0.89,status:'In Progress', reporter:'Arjun K.',   city:'Delhi',    ward:'Munirka Ward',     councillor:'Amit Yadav',    repairCost:45000,createdAt:'2024-03-01'},
-  {_id:'s10',location:{name:'LBS Road, Ghatkopar',       lat:19.0874,lng:72.9082},type:'Crack',  severity:'high',  riskScore:77,confidence:0.88,status:'In Progress', reporter:'Anjali D.',  city:'Mumbai',   ward:'Ghatkopar Ward',   councillor:'Mangal More',   repairCost:42000,createdAt:'2024-02-28'},
-  {_id:'s11',location:{name:'Karol Bagh Main Market',    lat:28.6514,lng:77.1909},type:'Pothole',severity:'low',   riskScore:24,confidence:0.73,status:'Resolved',    reporter:'Mohan L.',   city:'Delhi',    ward:'Karol Bagh Ward',  councillor:'Anita Singh',   repairCost:5500, createdAt:'2024-02-27'},
-  {_id:'s12',location:{name:'Sarjapur Road, Bellandur',  lat:12.9268,lng:77.6775},type:'Pothole',severity:'high',  riskScore:86,confidence:0.93,status:'Reported',   reporter:'Aditya S.',  city:'Bengaluru',ward:'Bellandur Ward',   councillor:'Narayanaswamy', repairCost:69000,createdAt:'2024-02-26'},
-  {_id:'s13',location:{name:'Pune-Mumbai Expressway',    lat:18.5975,lng:73.7898},type:'Pothole',severity:'high',  riskScore:90,confidence:0.95,status:'Reported',   reporter:'Nikhil J.',  city:'Pune',     ward:'Wakad Ward',       councillor:'Santosh Shinde',repairCost:78000,createdAt:'2024-02-25'},
-  {_id:'s14',location:{name:'SG Highway, Bodakdev',      lat:23.0415,lng:72.5052},type:'Pothole',severity:'high',  riskScore:86,confidence:0.93,status:'Reported',   reporter:'Jignesh P.', city:'Ahmedabad',ward:'Bodakdev Ward',    councillor:'Bharat Shah',   repairCost:68000,createdAt:'2024-02-24'},
-  {_id:'s15',location:{name:'Poonamallee High Road',     lat:13.0694,lng:80.1948},type:'Pothole',severity:'high',  riskScore:85,confidence:0.93,status:'Reported',   reporter:'Rajan M.',   city:'Chennai',  ward:'Koyambedu Ward',   councillor:'S. Vijayan',    repairCost:65000,createdAt:'2024-02-23'},
+  {_id:'s1', location:{name:'NH-48 Mahipalpur, New Delhi',      lat:28.5355,lng:77.1190},type:'Pothole',severity:'high',  riskScore:92,confidence:0.94,status:'Reported',   reporter:'Vikram S.',  city:'Delhi',    ward:'Mahipalpur Ward',    councillor:'Rajesh Gupta',   repairCost:82000,createdAt:'2024-03-10'},
+  {_id:'s2', location:{name:'Ring Road, Lajpat Nagar',           lat:28.5665,lng:77.2431},type:'Pothole',severity:'high',  riskScore:88,confidence:0.94,status:'Reported',   reporter:'Priya M.',   city:'Delhi',    ward:'Lajpat Nagar Ward',  councillor:'Sunita Sharma',  repairCost:74000,createdAt:'2024-03-08'},
+  {_id:'s3', location:{name:'Eastern Exp Hwy, Kurla, Mumbai',    lat:19.0725,lng:72.8851},type:'Pothole',severity:'high',  riskScore:89,confidence:0.94,status:'Reported',   reporter:'Vijay P.',   city:'Mumbai',   ward:'Kurla Ward',         councillor:'Santosh Patil',  repairCost:76000,createdAt:'2024-03-07'},
+  {_id:'s4', location:{name:'Outer Ring Road, Marathahalli',      lat:12.9591,lng:77.6974},type:'Pothole',severity:'high',  riskScore:91,confidence:0.96,status:'In Progress', reporter:'Suresh K.',  city:'Bengaluru',ward:'Marathahalli Ward',  councillor:'B.R. Nagaraj',   repairCost:81000,createdAt:'2024-03-06'},
+  {_id:'s5', location:{name:'Banjara Hills Road No.12, Hyderabad',lat:17.4126,lng:78.4438},type:'Pothole',severity:'high',  riskScore:89,confidence:0.95,status:'Reported',   reporter:'Lakshmi T.', city:'Hyderabad',ward:'Banjara Hills Ward', councillor:'Kalvakuntla S.', repairCost:77000,createdAt:'2024-03-05'},
+  {_id:'s6', location:{name:'Anna Salai, Teynampet, Chennai',     lat:13.0418,lng:80.2341},type:'Pothole',severity:'high',  riskScore:83,confidence:0.92,status:'Reported',   reporter:'Murugan S.', city:'Chennai',  ward:'Teynampet Ward',     councillor:'R. Natarajan',   repairCost:60000,createdAt:'2024-03-04'},
+  {_id:'s7', location:{name:'EM Bypass, Kasba, Kolkata',          lat:22.5124,lng:88.3890},type:'Pothole',severity:'high',  riskScore:88,confidence:0.94,status:'Reported',   reporter:'Debashis M.',city:'Kolkata',  ward:'Kasba Ward',         councillor:'Subrata Das',    repairCost:73000,createdAt:'2024-03-03'},
+  {_id:'s8', location:{name:'MG Road, Connaught Place, Delhi',    lat:28.6314,lng:77.2167},type:'Crack',  severity:'medium',riskScore:55,confidence:0.82,status:'In Progress', reporter:'Neha R.',    city:'Delhi',    ward:'CP Ward',            councillor:'Deepak Jain',    repairCost:18000,createdAt:'2024-03-02'},
+  {_id:'s9', location:{name:'Outer Ring Road, Munirka, Delhi',    lat:28.5527,lng:77.1718},type:'Crack',  severity:'high',  riskScore:79,confidence:0.89,status:'In Progress', reporter:'Arjun K.',   city:'Delhi',    ward:'Munirka Ward',       councillor:'Amit Yadav',     repairCost:45000,createdAt:'2024-03-01'},
+  {_id:'s10',location:{name:'LBS Road, Ghatkopar, Mumbai',        lat:19.0874,lng:72.9082},type:'Crack',  severity:'high',  riskScore:77,confidence:0.88,status:'In Progress', reporter:'Anjali D.',  city:'Mumbai',   ward:'Ghatkopar Ward',     councillor:'Mangal More',    repairCost:42000,createdAt:'2024-02-28'},
+  {_id:'s11',location:{name:'Karol Bagh Main Market, Delhi',      lat:28.6514,lng:77.1909},type:'Pothole',severity:'low',   riskScore:24,confidence:0.73,status:'Resolved',    reporter:'Mohan L.',   city:'Delhi',    ward:'Karol Bagh Ward',    councillor:'Anita Singh',    repairCost:5500, createdAt:'2024-02-27'},
+  {_id:'s12',location:{name:'Sarjapur Road, Bellandur, Bengaluru', lat:12.9268,lng:77.6775},type:'Pothole',severity:'high',  riskScore:86,confidence:0.93,status:'Reported',   reporter:'Aditya S.',  city:'Bengaluru',ward:'Bellandur Ward',     councillor:'Narayanaswamy',  repairCost:69000,createdAt:'2024-02-26'},
+  {_id:'s13',location:{name:'Pune-Mumbai Expressway, Wakad',       lat:18.5975,lng:73.7898},type:'Pothole',severity:'high',  riskScore:90,confidence:0.95,status:'Reported',   reporter:'Nikhil J.',  city:'Pune',     ward:'Wakad Ward',         councillor:'Santosh Shinde', repairCost:78000,createdAt:'2024-02-25'},
+  {_id:'s14',location:{name:'SG Highway, Bodakdev, Ahmedabad',     lat:23.0415,lng:72.5052},type:'Pothole',severity:'high',  riskScore:86,confidence:0.93,status:'Reported',   reporter:'Jignesh P.', city:'Ahmedabad',ward:'Bodakdev Ward',      councillor:'Bharat Shah',    repairCost:68000,createdAt:'2024-02-24'},
+  {_id:'s15',location:{name:'Poonamallee High Road, Koyambedu',    lat:13.0694,lng:80.1948},type:'Pothole',severity:'high',  riskScore:85,confidence:0.93,status:'Reported',   reporter:'Rajan M.',   city:'Chennai',  ward:'Koyambedu Ward',     councillor:'S. Vijayan',     repairCost:65000,createdAt:'2024-02-23'},
 ]
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-const ACCENT = '#e85d04'
-const BLUE   = '#1a3c6e'
-const rc     = s => s>=71?'#dc2626':s>=31?'#d97706':'#16a34a'
-const IMGS   = {
-  hero:    'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=1400&q=80',
-  road1:   'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=800&q=80',
-  road2:   'https://images.unsplash.com/photo-1543465077-db45d34b88a5?w=800&q=80',
-  p1:      'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?w=600&q=80',
-  p2:      'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&q=80',
-  crack:   'https://images.unsplash.com/photo-1566888596782-c7f41cc184c5?w=600&q=80',
-  repair:  'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=600&q=80',
+// ── SVG Icons (no emoji, no images) ──────────────────────────────────────────
+const Icon = ({ name, size=18, color='currentColor', sw=1.8 }) => {
+  const p = { fill:'none', stroke:color, strokeWidth:sw, strokeLinecap:'round', strokeLinejoin:'round' }
+  const paths = {
+    road:     <><path d="M3 17l9-14 9 14"/><path d="M12 3v14"/><path d="M7 17h10"/></>,
+    map:      <><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></>,
+    pin:      <><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></>,
+    alert:    <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
+    clock:    <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
+    check:    <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>,
+    camera:   <><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></>,
+    chart:    <><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></>,
+    brain:    <><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.44-3.66z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.44-3.66z"/></>,
+    shield:   <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></>,
+    moon:     <><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></>,
+    sun:      <><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></>,
+    logout:   <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>,
+    user:     <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
+    chevron:  <polyline points="6 9 12 15 18 9"/>,
+    x:        <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
+    dollar:   <><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></>,
+    building: <><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><path d="M9 22V12h6v10M8 6h.01M16 6h.01M8 10h.01M16 10h.01"/></>,
+    activity: <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>,
+    upload:   <><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></>,
+    star:     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>,
+  }
+  return <svg width={size} height={size} viewBox="0 0 24 24" {...p}>{paths[name]}</svg>
 }
 
-// ── GovField ──────────────────────────────────────────────────────────────────
-function GovField({ label, type, placeholder, value, onChange, T, bdr, required }) {
-  const [f, setF] = useState(false)
-  return (
-    <div>
-      <label style={{display:'block',fontSize:11,fontWeight:700,color:T?'#94a3b8':'#64748b',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.06em'}}>{label}</label>
-      <input type={type} placeholder={placeholder} value={value} onChange={onChange} required={required}
-        onFocus={()=>setF(true)} onBlur={()=>setF(false)}
-        style={{width:'100%',padding:'11px 14px',borderRadius:6,background:T?'#0f172a':'#f8fafc',border:`1px solid ${f?ACCENT:bdr}`,color:T?'#f1f5f9':'#0f172a',fontSize:14,outline:'none',fontFamily:'inherit',boxSizing:'border-box',transition:'border-color 0.2s'}}/>
-    </div>
-  )
+// ── Animated counter ──────────────────────────────────────────────────────────
+function AnimCounter({ value, duration=1200 }) {
+  const [display, setDisplay] = useState(0)
+  const ref = useRef()
+  const inView = useInView(ref, { once:true })
+  useEffect(() => {
+    if (!inView) return
+    const start = Date.now(), end = +String(value).replace(/[^0-9]/g,'') || 0
+    const prefix = String(value).replace(/[0-9.,]/g,'')
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - start
+      const progress = Math.min(elapsed / duration, 1)
+      const eased = 1 - Math.pow(1 - progress, 3)
+      setDisplay(Math.round(eased * end))
+      if (progress >= 1) clearInterval(timer)
+    }, 16)
+    return () => clearInterval(timer)
+  }, [inView, value, duration])
+  return <span ref={ref}>{display.toLocaleString('en-IN')}</span>
 }
 
-// ── StatCard ──────────────────────────────────────────────────────────────────
-function StatCard({ label, value, icon, accent, delta, bg2, bdr, txM, txS }) {
+// ── Stat card ─────────────────────────────────────────────────────────────────
+function StatCard({ label, value, icon, accent, delta, sub }) {
+  const ref = useRef()
+  const inView = useInView(ref, { once:true })
   return (
-    <motion.div whileHover={{y:-3,transition:{duration:0.15}}}
-      style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,padding:20,borderTop:`3px solid ${accent}`}}>
-      <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:14}}>
-        <div style={{width:42,height:42,borderRadius:10,background:accent+'1a',display:'flex',alignItems:'center',justifyContent:'center'}}>{icon}</div>
-        {delta!==undefined&&<span style={{fontSize:11,fontWeight:700,color:delta>=0?'#16a34a':'#dc2626',background:delta>=0?'#dcfce7':'#fee2e2',padding:'3px 8px',borderRadius:4}}>{delta>=0?'+':''}{delta}%</span>}
+    <motion.div ref={ref}
+      initial={{ opacity:0, y:24 }} animate={inView?{opacity:1,y:0}:{opacity:0,y:24}} transition={{ duration:0.5 }}
+      whileHover={{ y:-4, transition:{duration:0.15} }}
+      style={{ background:C.bg2, border:`1px solid ${C.bdr}`, borderRadius:8, padding:'18px 20px', borderTop:`2px solid ${accent}`, position:'relative', overflow:'hidden', cursor:'default' }}>
+      {/* Corner accents */}
+      <div style={{ position:'absolute', top:0, right:0, width:16, height:16, borderTop:`1px solid ${accent}`, borderRight:`1px solid ${accent}` }}/>
+      <div style={{ position:'absolute', bottom:0, left:0, width:16, height:16, borderBottom:`1px solid ${accent}44`, borderLeft:`1px solid ${accent}44` }}/>
+      {/* Glow */}
+      <div style={{ position:'absolute', top:-30, right:-30, width:100, height:100, borderRadius:'50%', background:accent+'0a', pointerEvents:'none' }}/>
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:14 }}>
+        <div style={{ width:38, height:38, borderRadius:6, background:accent+'18', border:`1px solid ${accent}30`, display:'flex', alignItems:'center', justifyContent:'center', color:accent }}>
+          {icon}
+        </div>
+        {delta!==undefined && (
+          <span className="mono" style={{ fontSize:11, fontWeight:600, color:delta>=0?C.green:C.red, background:delta>=0?'rgba(0,230,118,0.08)':'rgba(255,61,90,0.08)', padding:'2px 7px', borderRadius:3 }}>
+            {delta>=0?'+':''}{delta}%
+          </span>
+        )}
       </div>
-      <div style={{fontSize:30,fontWeight:900,color:txM,letterSpacing:'-0.04em',lineHeight:1}}>{value}</div>
-      <div style={{fontSize:13,color:txS,marginTop:6}}>{label}</div>
+      <div className="mono" style={{ fontSize:28, fontWeight:700, color:C.tx1, letterSpacing:'-0.04em', lineHeight:1 }}>
+        {typeof value === 'number' ? <AnimCounter value={value}/> : value}
+      </div>
+      <div style={{ fontSize:12, color:C.tx2, marginTop:6, fontWeight:500 }}>{label}</div>
+      {sub && <div style={{ fontSize:10, color:C.tx3, marginTop:3, fontFamily:'var(--mono)' }}>{sub}</div>}
     </motion.div>
   )
 }
 
-// ── UploadPanel ───────────────────────────────────────────────────────────────
-function UploadPanel({ token, onDone, T, bg2, bdr, txM, txS }) {
-  const [drag,   setDrag]   = useState(false)
-  const [file,   setFile]   = useState(null)
-  const [prev,   setPrev]   = useState(null)
-  const [busy,   setBusy]   = useState(false)
-  const [res,    setRes]    = useState(null)
-  const [loc,    setLoc]    = useState(null)
-  const [name,   setName]   = useState('')
-  const [done,   setDone]   = useState(false)
-  const [step,   setStep]   = useState('pick')
-  const [prog,   setProg]   = useState({msg:'',pct:0})
+// ── Section wrapper with scroll animation ────────────────────────────────────
+function Section({ children, delay=0 }) {
+  const ref = useRef()
+  const inView = useInView(ref, { once:true, margin:'-60px' })
+  return (
+    <motion.div ref={ref}
+      initial={{ opacity:0, y:32 }} animate={inView?{opacity:1,y:0}:{opacity:0,y:32}}
+      transition={{ duration:0.55, delay, ease:[0.22,1,0.36,1] }}>
+      {children}
+    </motion.div>
+  )
+}
+
+// ── Report row ────────────────────────────────────────────────────────────────
+function ReportRow({ r, selected, onClick, i }) {
+  const id = r._id??r.id, score = r.riskScore??r.risk??50
+  const ref = useRef()
+  const inView = useInView(ref, { once:true })
+  const sevClass = r.severity==='high'?'sev-high':r.severity==='medium'?'sev-medium':'sev-low'
+  const stClass  = r.status==='Resolved'?'st-resolved':r.status==='In Progress'?'st-progress':'st-reported'
+  return (
+    <motion.div ref={ref}
+      initial={{ opacity:0, x:-12 }} animate={inView?{opacity:1,x:0}:{opacity:0,x:-12}} transition={{ delay:i*0.03 }}
+      onClick={onClick} whileHover={{ x:3, backgroundColor:'rgba(0,212,255,0.04)' }}
+      style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px', borderRadius:6, cursor:'pointer', transition:'background 0.15s',
+        background: selected?'rgba(0,212,255,0.06)':'transparent',
+        border: `1px solid ${selected?C.bdr:C.bdr2}` }}>
+      <div style={{ width:7, height:7, borderRadius:'50%', background:rc(score), flexShrink:0, boxShadow:`0 0 8px ${rc(score)}88` }}/>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:13, fontWeight:600, color:C.tx1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+          {r.location?.name??r.location??'Unknown'}
+        </div>
+        <div style={{ fontSize:10, color:C.tx3, marginTop:2, fontFamily:'var(--mono)' }}>
+          {r.type} · {r.city??'—'} · {new Date(r.createdAt??Date.now()).toLocaleDateString('en-IN')}
+        </div>
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4, flexShrink:0 }}>
+        <span className={sevClass}>{(r.severity??'med').toUpperCase()}</span>
+        <span className="mono" style={{ fontSize:15, fontWeight:700, color:rc(score) }}>{score}</span>
+      </div>
+    </motion.div>
+  )
+}
+
+// ── GovField ──────────────────────────────────────────────────────────────────
+function GovField({ label, type, placeholder, value, onChange, required }) {
+  const [focus, setFocus] = useState(false)
+  return (
+    <div>
+      <label className="label" style={{ marginBottom:8, fontSize:10 }}>{label}</label>
+      <input type={type} placeholder={placeholder} value={value} onChange={onChange} required={required}
+        onFocus={()=>setFocus(true)} onBlur={()=>setFocus(false)}
+        className="input-dark"
+        style={{ borderColor: focus?C.cyan:C.bdr }}
+      />
+    </div>
+  )
+}
+
+// ── Upload panel ──────────────────────────────────────────────────────────────
+function UploadPanel({ token, onDone }) {
+  const [drag,  setDrag]  = useState(false)
+  const [file,  setFile]  = useState(null)
+  const [prev,  setPrev]  = useState(null)
+  const [busy,  setBusy]  = useState(false)
+  const [res,   setRes]   = useState(null)
+  const [loc,   setLoc]   = useState(null)
+  const [name,  setName]  = useState('')
+  const [done,  setDone]  = useState(false)
+  const [step,  setStep]  = useState('pick')
+  const [prog,  setProg]  = useState({ msg:'', pct:0 })
   const fRef = useRef()
 
   useEffect(() => {
     navigator.geolocation?.getCurrentPosition(
-      p => setLoc({lat:p.coords.latitude, lng:p.coords.longitude}),
-      ()  => setLoc({lat:28.6139, lng:77.209})
+      p => setLoc({ lat:p.coords.latitude, lng:p.coords.longitude }),
+      () => setLoc({ lat:28.6139, lng:77.209 })
     )
   }, [])
 
   const pick = f => {
     if (!f?.type.startsWith('image/')) return
     setFile(f); setRes(null); setDone(false); setStep('analyze')
-    const r = new FileReader(); r.onload = e => setPrev(e.target.result); r.readAsDataURL(f)
+    const r = new FileReader(); r.onload=e=>setPrev(e.target.result); r.readAsDataURL(f)
   }
-
   const analyze = async () => {
-    setBusy(true); setProg({msg:'Initializing…',pct:5})
-    try {
-      const result = await runDemoAI((msg,pct) => setProg({msg,pct}))
-      setRes(result); setStep('submit')
-    } finally { setBusy(false); setProg({msg:'',pct:0}) }
+    setBusy(true); setProg({ msg:'Initializing…', pct:5 })
+    try { const result = await runDemoAI((msg,pct)=>setProg({msg,pct})); setRes(result); setStep('submit') }
+    finally { setBusy(false); setProg({msg:'',pct:0}) }
   }
-
   const submit = async () => {
     if (!file||!res) return; setBusy(true)
     try {
-      const fd = new FormData()
+      const fd=new FormData()
       fd.append('image',file); fd.append('lat',loc?.lat||28.6139); fd.append('lng',loc?.lng||77.209)
       fd.append('locationName',name||'Reported Location'); fd.append('severity',res.severity)
       fd.append('riskScore',res.riskScore); fd.append('detections',JSON.stringify(res.detections))
       onDone(await api.createReport(token,fd)); setDone(true)
-    } catch(e) { console.error(e) } finally { setBusy(false) }
+    } catch(e){console.error(e)} finally{setBusy(false)}
   }
-
-  const reset = () => { setFile(null);setPrev(null);setRes(null);setDone(false);setStep('pick') }
+  const reset = ()=>{ setFile(null);setPrev(null);setRes(null);setDone(false);setStep('pick') }
 
   if (done) return (
-    <motion.div initial={{opacity:0,scale:0.97}} animate={{opacity:1,scale:1}} style={{textAlign:'center',padding:'48px 24px'}}>
-      <div style={{width:60,height:60,borderRadius:'50%',background:'#dcfce7',border:'2px solid #16a34a',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px'}}>
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+    <motion.div initial={{opacity:0,scale:0.95}} animate={{opacity:1,scale:1}}
+      style={{ textAlign:'center', padding:'48px 24px', background:C.bg2, border:`1px solid ${C.bdr}`, borderRadius:8 }}>
+      <div style={{ width:56,height:56,borderRadius:'50%',background:'rgba(0,230,118,0.1)',border:`1px solid ${C.green}44`,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',color:C.green }}>
+        <Icon name="check" size={24} color={C.green}/>
       </div>
-      <div style={{fontSize:20,fontWeight:800,color:txM,marginBottom:8}}>Report Submitted Successfully</div>
-      <div style={{fontSize:13,color:txS,marginBottom:6}}>Risk Score: <span style={{color:rc(res.riskScore),fontWeight:700}}>{res.riskScore}/100</span> · Pinned on map</div>
-      <div style={{fontSize:12,color:'#15803d',marginBottom:28,padding:'8px 16px',background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:6,display:'inline-block'}}>
-        Reference: RW-{Date.now().toString().slice(-7)} · Municipal authority notified
+      <div style={{ fontSize:18, fontWeight:700, color:C.tx1, marginBottom:8 }}>Report Submitted Successfully</div>
+      <div style={{ fontSize:13, color:C.tx2, marginBottom:6 }}>
+        Risk Score: <span className="mono" style={{ color:rc(res.riskScore), fontWeight:700 }}>{res.riskScore}/100</span>
+      </div>
+      <div className="mono" style={{ fontSize:11, color:C.cyan, marginBottom:24, padding:'6px 14px', background:C.cyan3, border:`1px solid ${C.bdr}`, borderRadius:4, display:'inline-block', letterSpacing:'0.08em' }}>
+        REF: RW-{Date.now().toString().slice(-7)}
       </div>
       <br/>
-      <button onClick={reset} style={{padding:'10px 24px',borderRadius:6,border:'none',background:ACCENT,color:'#fff',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Report Another Issue</button>
+      <button onClick={reset} style={{ padding:'9px 22px', borderRadius:4, border:`1px solid ${C.orange}`, background:'rgba(255,107,53,0.1)', color:C.orange, fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:13 }}>
+        REPORT ANOTHER ISSUE
+      </button>
     </motion.div>
   )
 
   return (
-    <div style={{display:'flex',flexDirection:'column',gap:16}}>
-      {/* Step tracker */}
-      <div style={{display:'flex',alignItems:'center'}}>
-        {[['Upload','pick'],['AI Analysis','analyze'],['Submit','submit']].map(([l,s],i) => {
+    <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+      {/* Step indicator */}
+      <div style={{ display:'flex', alignItems:'center', gap:0 }}>
+        {[['01','UPLOAD','pick'],['02','AI SCAN','analyze'],['03','SUBMIT','submit']].map(([num,l,s],i) => {
           const active=step===s, done2=['pick','analyze','submit'].indexOf(step)>i
           return (
-            <div key={s} style={{display:'flex',alignItems:'center',flex:1}}>
-              <div style={{display:'flex',alignItems:'center',gap:8}}>
-                <div style={{width:26,height:26,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:700,
-                  background:active?ACCENT:done2?'#16a34a':'transparent',color:active||done2?'#fff':T?'#64748b':'#94a3b8',
-                  border:active?`2px solid ${ACCENT}`:done2?'2px solid #16a34a':`2px solid ${T?'#475569':'#cbd5e1'}`}}>
-                  {done2?<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>:i+1}
+            <div key={s} style={{ display:'flex', alignItems:'center', flex:1 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <div className="mono" style={{ width:28,height:28,borderRadius:4,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,
+                  background:active?C.cyan:done2?'rgba(0,230,118,0.15)':'transparent',
+                  color:active?C.bg:done2?C.green:C.tx3,
+                  border:`1px solid ${active?C.cyan:done2?C.green:C.bdr2}` }}>
+                  {done2 ? <Icon name="check" size={12} color={C.green}/> : num}
                 </div>
-                <span style={{fontSize:12,fontWeight:600,color:active?ACCENT:done2?'#16a34a':txS}}>{l}</span>
+                <span style={{ fontSize:10, fontWeight:700, letterSpacing:'0.08em', color:active?C.cyan:done2?C.green:C.tx3 }}>{l}</span>
               </div>
-              {i<2&&<div style={{flex:1,height:2,margin:'0 8px',background:done2?'#16a34a':bdr,borderRadius:999}}/>}
+              {i<2&&<div style={{ flex:1, height:1, margin:'0 10px', background:done2?C.green:C.bdr2 }}/>}
             </div>
           )
         })}
@@ -160,68 +271,73 @@ function UploadPanel({ token, onDone, T, bg2, bdr, txM, txS }) {
         <motion.div onClick={()=>fRef.current?.click()}
           onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)}
           onDrop={e=>{e.preventDefault();setDrag(false);pick(e.dataTransfer.files[0])}}
-          whileHover={{scale:1.003}} whileTap={{scale:0.997}}
-          style={{border:`2px dashed ${drag?ACCENT:bdr}`,background:drag?'#fff7ed':'transparent',borderRadius:10,padding:'40px 24px',textAlign:'center',cursor:'pointer',transition:'all 0.2s'}}>
+          whileHover={{ scale:1.01 }} whileTap={{ scale:0.99 }}
+          style={{ border:`1px dashed ${drag?C.cyan:C.bdr}`, background:drag?'rgba(0,212,255,0.04)':'transparent', borderRadius:8, padding:'44px 24px', textAlign:'center', cursor:'pointer', transition:'all 0.2s', position:'relative' }}>
+          <div className="corner-tl"/><div className="corner-tr"/><div className="corner-bl"/><div className="corner-br"/>
           <input ref={fRef} type="file" accept="image/*" style={{display:'none'}} onChange={e=>pick(e.target.files[0])}/>
-          <div style={{display:'flex',gap:8,justifyContent:'center',marginBottom:16}}>
-            {[IMGS.p1,IMGS.crack,IMGS.repair].map((src,i)=>(
-              <img key={i} src={src} alt="" style={{width:72,height:52,objectFit:'cover',borderRadius:6,border:`1px solid ${bdr}`,opacity:0.75}}/>
-            ))}
+          <div style={{ width:52,height:52,borderRadius:8,background:C.cyan3,border:`1px solid ${C.bdr}`,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 14px',color:C.cyan }}>
+            <Icon name="upload" size={24} color={C.cyan}/>
           </div>
-          <div style={{fontWeight:700,color:txM,fontSize:15,marginBottom:6}}>Upload Road Damage Photo</div>
-          <div style={{fontSize:13,color:txS}}>Drag & drop or click · PNG, JPG, WEBP up to 10MB</div>
+          <div style={{ fontWeight:600, color:C.tx1, fontSize:14, marginBottom:6 }}>UPLOAD ROAD DAMAGE PHOTO</div>
+          <div style={{ fontSize:12, color:C.tx3 }}>Drag & drop or click to browse · PNG, JPG, WEBP · Max 10MB</div>
         </motion.div>
       ) : (
-        <motion.div initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} style={{display:'flex',flexDirection:'column',gap:12}}>
-          <div style={{position:'relative',background:'#000',borderRadius:10,overflow:'hidden',border:`1px solid ${bdr}`}}>
+        <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} style={{display:'flex',flexDirection:'column',gap:12}}>
+          <div style={{ position:'relative', background:'#000', borderRadius:8, overflow:'hidden', border:`1px solid ${C.bdr}` }}>
             {res
               ? <AIDetectionCanvas imageUrl={prev} detections={res.detections} modelName={res.model} processingMs={res.processingMs}/>
-              : <img src={prev} alt="preview" style={{width:'100%',maxHeight:280,objectFit:'contain',display:'block'}}/>
-            }
+              : <img src={prev} alt="preview" style={{width:'100%',maxHeight:280,objectFit:'contain',display:'block'}}/>}
             {busy&&(
-              <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.78)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:14,padding:28}}>
-                <div style={{width:'78%',background:'rgba(255,255,255,0.1)',borderRadius:999,height:5,overflow:'hidden'}}>
-                  <div style={{height:'100%',borderRadius:999,background:ACCENT,width:`${prog.pct}%`,transition:'width 0.4s ease'}}/>
+              <div style={{ position:'absolute',inset:0,background:'rgba(2,9,20,0.85)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:14,padding:28 }}>
+                <div style={{ width:'75%', background:'rgba(0,212,255,0.1)', borderRadius:2, height:4, overflow:'hidden', border:`1px solid ${C.bdr}` }}>
+                  <motion.div animate={{ width:`${prog.pct}%` }} transition={{ duration:0.4 }}
+                    style={{ height:'100%', background:C.cyan, boxShadow:`0 0 12px ${C.cyan}` }}/>
                 </div>
-                <div style={{fontSize:13,color:'rgba(255,255,255,0.85)',fontWeight:600}}>{prog.msg}</div>
-                <div style={{fontSize:11,color:'rgba(255,255,255,0.35)',fontFamily:'monospace'}}>YOLOv8n-CRDDC · {prog.pct}%</div>
+                <div style={{ fontSize:12, color:C.tx2, fontWeight:600, letterSpacing:'0.04em' }}>{prog.msg}</div>
+                <div className="mono" style={{ fontSize:10, color:C.tx3 }}>YOLOv8n-CRDDC · {prog.pct}%</div>
               </div>
             )}
-            {res&&(
-              <div style={{position:'absolute',top:8,right:8,background:'rgba(22,163,74,0.9)',color:'#fff',padding:'4px 10px',borderRadius:4,fontSize:11,fontWeight:700,display:'flex',alignItems:'center',gap:6}}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                Detection Complete
-              </div>
-            )}
+            {res&&<div style={{ position:'absolute',top:8,right:8,background:'rgba(0,230,118,0.85)',color:C.bg,padding:'4px 10px',borderRadius:3,fontSize:10,fontWeight:700,letterSpacing:'0.06em',display:'flex',alignItems:'center',gap:5 }}>
+              <Icon name="check" size={10} color={C.bg}/>DETECTION COMPLETE
+            </div>}
           </div>
 
           {res&&(
             <motion.div initial={{opacity:0}} animate={{opacity:1}} style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
-              {[['Detections',res.detections.length,null],['Risk Score',`${res.riskScore}/100`,rc(res.riskScore)],['Severity',res.severity.toUpperCase(),rc(res.riskScore)]].map(([l,v,c])=>(
-                <div key={l} style={{background:T?'#0f172a':'#f8fafc',border:`1px solid ${bdr}`,borderRadius:8,padding:'12px',textAlign:'center'}}>
-                  <div style={{fontSize:10,color:txS,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>{l}</div>
-                  <div style={{fontSize:16,fontWeight:700,color:c||txM}}>{v}</div>
+              {[['DETECTIONS',res.detections.length,C.cyan],['RISK SCORE',`${res.riskScore}/100`,rc(res.riskScore)],['SEVERITY',res.severity.toUpperCase(),rc(res.riskScore)]].map(([l,v,col])=>(
+                <div key={l} style={{background:C.bg3,border:`1px solid ${C.bdr}`,borderRadius:6,padding:'12px',textAlign:'center',position:'relative',overflow:'hidden'}}>
+                  <div className="label" style={{justifyContent:'center',marginBottom:6,fontSize:9}}>{l}</div>
+                  <div className="mono" style={{fontSize:16,fontWeight:700,color:col}}>{v}</div>
                 </div>
               ))}
             </motion.div>
           )}
 
           {res&&(
-            <div style={{background:T?'rgba(255,255,255,0.03)':'#f8fafc',border:`1px solid ${bdr}`,borderRadius:8,padding:'10px 14px',fontSize:12,color:txS}}>
-              <strong style={{color:txM}}>Model: </strong>{res.model} &nbsp;·&nbsp;
-              <strong style={{color:txM}}>Inference: </strong>{res.processingMs}ms &nbsp;·&nbsp;
-              <strong style={{color:txM}}>Detections: </strong>{res.detections.length} object{res.detections.length!==1?'s':''} found
+            <div style={{ background:C.bg3, border:`1px solid ${C.bdr}`, borderRadius:6, padding:'8px 12px', fontSize:11 }}>
+              <span className="mono" style={{color:C.tx3}}>MODEL: </span><span style={{color:C.cyan,fontWeight:600}}>{res.model}</span>
+              <span className="mono" style={{color:C.tx3,margin:'0 12px'}}>·</span>
+              <span className="mono" style={{color:C.tx3}}>INFERENCE: </span><span style={{color:C.tx2}}>{res.processingMs}ms</span>
+              <span className="mono" style={{color:C.tx3,margin:'0 12px'}}>·</span>
+              <span className="mono" style={{color:C.tx3}}>OBJECTS: </span><span style={{color:C.tx2}}>{res.detections.length}</span>
             </div>
           )}
 
-          {res&&<input placeholder="Location name (e.g. NH-48, near Toll Plaza)" value={name} onChange={e=>setName(e.target.value)}
-            style={{padding:'10px 14px',borderRadius:6,background:T?'#0f172a':'#f8fafc',border:`1px solid ${bdr}`,color:txM,fontSize:13,outline:'none',fontFamily:'inherit',boxSizing:'border-box',width:'100%'}}/>}
+          {res&&<input className="input-dark" placeholder="LOCATION NAME (e.g. NH-48, near Toll Plaza)" value={name} onChange={e=>setName(e.target.value)} style={{textTransform:'uppercase',fontSize:12,letterSpacing:'0.04em'}}/>}
 
           <div style={{display:'flex',gap:10}}>
-            {step==='analyze'&&!busy&&<button onClick={analyze} style={{flex:1,padding:'11px',borderRadius:6,border:'none',background:BLUE,color:'#fff',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Run AI Analysis</button>}
-            {step==='submit'&&<button onClick={submit} disabled={busy} style={{flex:1,padding:'11px',borderRadius:6,border:'none',background:ACCENT,color:'#fff',fontWeight:700,cursor:'pointer',fontFamily:'inherit',opacity:busy?0.6:1}}>{busy?'Submitting…':'Submit Report'}</button>}
-            <button onClick={reset} style={{padding:'11px 14px',borderRadius:6,border:`1px solid ${bdr}`,background:'transparent',color:txS,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center'}}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            {step==='analyze'&&!busy&&(
+              <button onClick={analyze} style={{flex:1,padding:'11px',borderRadius:4,border:`1px solid ${C.cyan}`,background:C.cyan3,color:C.cyan,fontWeight:700,cursor:'pointer',fontFamily:'inherit',fontSize:13,letterSpacing:'0.04em'}}>
+                RUN AI ANALYSIS
+              </button>
+            )}
+            {step==='submit'&&(
+              <button onClick={submit} disabled={busy} style={{flex:1,padding:'11px',borderRadius:4,border:'none',background:C.orange,color:'#fff',fontWeight:700,cursor:'pointer',fontFamily:'inherit',fontSize:13,letterSpacing:'0.04em',opacity:busy?0.6:1}}>
+                {busy?'SUBMITTING…':'SUBMIT REPORT'}
+              </button>
+            )}
+            <button onClick={reset} style={{padding:'11px 14px',borderRadius:4,border:`1px solid ${C.bdr2}`,background:'transparent',color:C.tx3,cursor:'pointer',display:'flex',alignItems:'center'}}>
+              <Icon name="x" size={14} color={C.tx3}/>
             </button>
           </div>
         </motion.div>
@@ -233,7 +349,6 @@ function UploadPanel({ token, onDone, T, bg2, bdr, txM, txS }) {
 // ── APP ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const { user, token, login, signup, logout, loading } = useAuth()
-  const [dark,       setDark]      = useState(false)
   const [tab,        setTab]       = useState('overview')
   const [ftab,       setFtab]      = useState('budget')
   const [authMode,   setAuthMode]  = useState(null)
@@ -251,13 +366,15 @@ export default function App() {
   const [filterStat, setFilterStat]= useState('all')
   const [notif,      setNotif]     = useState(null)
   const [menuOpen,   setMenuOpen]  = useState(false)
+  const menuRef = useRef()
 
-  const T   = dark
-  const bg  = T?'#0f172a':'#f1f5f9'
-  const bg2 = T?'#1e293b':'#ffffff'
-  const bdr = T?'#334155':'#e2e8f0'
-  const txM = T?'#f1f5f9':'#0f172a'
-  const txS = T?'#94a3b8':'#64748b'
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!menuOpen) return
+    const handler = e => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [menuOpen])
 
   const toast = (msg,type='ok') => { setNotif({msg,type}); setTimeout(()=>setNotif(null),3500) }
 
@@ -275,11 +392,11 @@ export default function App() {
     } catch {}
   }, [token, filterSev, filterStat])
 
-  useEffect(() => { load() }, [load])
+  useEffect(()=>{ load() },[load])
 
-  const handleNew = r => { setReports(p=>[r,...p]); toast(`Report submitted · Risk: ${r.riskScore}/100`); setTab('map') }
+  const handleNew = r => { setReports(p=>[r,...p]); toast(`REPORT SUBMITTED · RISK: ${r.riskScore}/100`); setTab('map') }
   const updateStatus = async (id,status) => {
-    try { const u=await api.updateStatus(token,id,status); setReports(p=>p.map(r=>(r._id??r.id)===id?u:r)); toast(`Status → ${status}`) }
+    try { const u=await api.updateStatus(token,id,status); setReports(p=>p.map(r=>(r._id??r.id)===id?u:r)); toast(`STATUS → ${status.toUpperCase()}`) }
     catch(e) { toast(e.message,'err') }
   }
   const handleAuth = async e => {
@@ -294,97 +411,135 @@ export default function App() {
 
   const sel  = reports.find(r=>(r._id??r.id)===selected)
   const tabs = user
-    ? [['overview','Overview'],['map','Live Map'],['report','Report Issue'],['analytics','Analytics'],['features','Smart Features']]
-    : [['overview','Overview'],['map','Live Map']]
+    ? [['overview','OVERVIEW'],['map','LIVE MAP'],['report','REPORT'],['analytics','ANALYTICS'],['features','AI TOOLS']]
+    : [['overview','OVERVIEW'],['map','LIVE MAP']]
 
-  const sevL = s=>({high:'#fef2f2 #dc2626 #fecaca',medium:'#fffbeb #d97706 #fde68a',low:'#f0fdf4 #16a34a #bbf7d0'}[s]||'#eff6ff #2563eb #bfdbfe')
-  const sevD = s=>({high:'rgba(220,38,38,0.15) #f87171 rgba(220,38,38,0.3)',medium:'rgba(217,119,6,0.15) #fbbf24 rgba(217,119,6,0.3)',low:'rgba(22,163,74,0.15) #4ade80 rgba(22,163,74,0.3)'}[s]||'rgba(37,99,235,0.15) #60a5fa rgba(37,99,235,0.3)')
-  const statC= (s)=>({Reported:'#2563eb','In Progress':'#d97706',Resolved:'#16a34a'}[s]||'#6366f1')
+  const sevBadge = s => s==='high'?'sev-high':s==='medium'?'sev-medium':'sev-low'
+  const stBadge  = s => s==='Resolved'?'st-resolved':s==='In Progress'?'st-progress':'st-reported'
 
-  const iconProps = { fill:'none', strokeLinecap:'round', strokeLinejoin:'round' }
+  const CT = {  // common token shorthand
+    card: { background:C.bg2, border:`1px solid ${C.bdr}`, borderRadius:8 },
+    row: { display:'grid', gap:16 },
+  }
 
   if (loading) return (
-    <div style={{minHeight:'100vh',background:'#f1f5f9',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:14}}>
-      <div style={{width:36,height:36,border:'3px solid #e2e8f0',borderTopColor:ACCENT,borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    <div className="grid-bg" style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:16}}>
+      <div style={{color:C.cyan,marginBottom:8}}><Icon name="road" size={40} color={C.cyan}/></div>
+      <div style={{width:32,height:32,border:`2px solid ${C.bdr}`,borderTopColor:C.cyan,borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
+      <div className="mono" style={{fontSize:11,color:C.tx3,letterSpacing:'0.12em'}}>INITIALIZING ROADWATCH AI…</div>
     </div>
   )
 
   return (
-    <div style={{minHeight:'100vh',background:bg,color:txM,fontFamily:"'Inter',system-ui,sans-serif",transition:'background 0.25s,color 0.25s'}}>
-      <style>{`
-        *{box-sizing:border-box;margin:0;padding:0}
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-        @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-        ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:${bdr};border-radius:99px}
-        input:focus{border-color:${ACCENT}!important;outline:none}
-        .leaflet-control-zoom a{background:${bg2}!important;color:${txM}!important;border-color:${bdr}!important}
-        .leaflet-control-attribution{background:${T?'rgba(15,23,42,0.85)':'rgba(255,255,255,0.9)'}!important;color:${txS}!important;font-size:10px!important}
-        .rw-popup .leaflet-popup-content-wrapper{background:transparent!important;border:none!important;box-shadow:0 16px 48px rgba(0,0,0,0.3)!important;border-radius:12px!important;padding:0!important}
-        .rw-popup .leaflet-popup-content{margin:0!important}
-        .rw-popup .leaflet-popup-tip-container{display:none!important}
-      `}</style>
+    <div className="grid-bg" style={{minHeight:'100vh',background:C.bg,color:C.tx1,fontFamily:"'Inter',system-ui,sans-serif"}}>
 
       {/* TOAST */}
       <AnimatePresence>
         {notif&&(
-          <motion.div initial={{opacity:0,y:-20,x:'-50%'}} animate={{opacity:1,y:0,x:'-50%'}} exit={{opacity:0,y:-16,x:'-50%'}}
-            style={{position:'fixed',top:20,left:'50%',zIndex:9999,padding:'10px 22px',borderRadius:6,fontSize:13,fontWeight:600,whiteSpace:'nowrap',boxShadow:'0 4px 16px rgba(0,0,0,0.1)',
-              background:notif.type==='err'?'#fee2e2':'#dcfce7',border:`1px solid ${notif.type==='err'?'#fca5a5':'#86efac'}`,color:notif.type==='err'?'#dc2626':'#16a34a'}}>
+          <motion.div initial={{opacity:0,y:-24,x:'-50%'}} animate={{opacity:1,y:0,x:'-50%'}} exit={{opacity:0,y:-16,x:'-50%'}}
+            className="mono"
+            style={{position:'fixed',top:20,left:'50%',zIndex:9999,padding:'9px 20px',borderRadius:4,fontSize:12,fontWeight:600,whiteSpace:'nowrap',letterSpacing:'0.05em',
+              background:notif.type==='err'?'rgba(255,61,90,0.15)':'rgba(0,230,118,0.1)',
+              border:`1px solid ${notif.type==='err'?C.red:C.green}44`,
+              color:notif.type==='err'?C.red:C.green,
+              boxShadow:`0 0 24px ${notif.type==='err'?'rgba(255,61,90,0.2)':'rgba(0,230,118,0.2)'}`,
+            }}>
             {notif.msg}
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* HEADER */}
-      <header style={{background:T?'linear-gradient(135deg,#0f1e35,#0a1425)':`linear-gradient(135deg,${BLUE},#1e4d8c)`,position:'relative',overflow:'hidden'}}>
-        <div style={{position:'absolute',inset:0,backgroundImage:`url(${IMGS.hero})`,backgroundSize:'cover',backgroundPosition:'center',opacity:0.07,pointerEvents:'none'}}/>
-        <div style={{maxWidth:1400,margin:'0 auto',padding:'14px 24px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:16,position:'relative',zIndex:1}}>
-          <div style={{display:'flex',alignItems:'center',gap:14}}>
-            <div style={{width:46,height:46,borderRadius:10,overflow:'hidden',border:'2px solid rgba(255,255,255,0.2)',flexShrink:0}}>
-              <img src={IMGS.road1} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+      <header style={{ background:`linear-gradient(135deg,${C.bg1},${C.bg2})`, borderBottom:`1px solid ${C.bdr}`, position:'relative', overflow:'hidden' }}>
+        {/* Scan line effect */}
+        <div style={{ position:'absolute', inset:0, background:'linear-gradient(180deg,rgba(0,212,255,0.03) 0%,transparent 100%)', pointerEvents:'none' }}/>
+        <div style={{ maxWidth:1400, margin:'0 auto', padding:'14px 24px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:16, position:'relative', zIndex:1 }}>
+
+          {/* Logo — SVG icon, no image */}
+          <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+            <div style={{ width:44, height:44, borderRadius:8, background:C.cyan3, border:`1px solid ${C.bdr}`, display:'flex', alignItems:'center', justifyContent:'center', position:'relative', flexShrink:0 }}>
+              <div className="corner-tl"/><div className="corner-tr"/><div className="corner-bl"/><div className="corner-br"/>
+              <Icon name="road" size={22} color={C.cyan} sw={1.5}/>
             </div>
             <div>
-              <div style={{fontWeight:900,fontSize:20,color:'#fff',letterSpacing:'-0.03em',lineHeight:1}}>RoadWatch AI</div>
-              <div style={{fontSize:10,color:'rgba(255,255,255,0.5)',letterSpacing:'0.07em',marginTop:3,textTransform:'uppercase'}}>Smart Road Intelligence · Government of India</div>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <span style={{ fontWeight:900, fontSize:18, color:C.tx1, letterSpacing:'-0.03em' }}>ROADWATCH</span>
+                <span className="mono" style={{ fontSize:11, fontWeight:700, color:C.cyan, background:C.cyan3, border:`1px solid ${C.bdr}`, padding:'2px 7px', borderRadius:3, letterSpacing:'0.08em' }}>AI</span>
+              </div>
+              <div className="mono" style={{ fontSize:9, color:C.tx3, letterSpacing:'0.12em', marginTop:2 }}>SMART ROAD INTELLIGENCE · GOV OF INDIA</div>
             </div>
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <button onClick={()=>setDark(d=>!d)}
-              style={{padding:'8px 14px',borderRadius:6,border:'1px solid rgba(255,255,255,0.2)',background:'rgba(255,255,255,0.08)',color:'#fff',fontSize:13,cursor:'pointer',fontFamily:'inherit',fontWeight:500,display:'flex',alignItems:'center',gap:7}}>
-              {T
-                ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-                : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              }
-              {T?'Light Mode':'Dark Mode'}
-            </button>
+
+          {/* Center — live status */}
+          <div className="hide-sm" style={{ display:'flex', alignItems:'center', gap:16, background:C.bg3, border:`1px solid ${C.bdr}`, borderRadius:6, padding:'8px 16px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+              <span className="dot-green"/>
+              <span className="mono" style={{ fontSize:11, color:C.tx2, letterSpacing:'0.06em' }}>SYSTEM OPERATIONAL</span>
+            </div>
+            <div style={{ width:1, height:16, background:C.bdr }}/>
+            <span className="mono" style={{ fontSize:11, color:C.tx3 }}>{reports.length} INCIDENTS TRACKED</span>
+            <div style={{ width:1, height:16, background:C.bdr }}/>
+            <span className="mono" style={{ fontSize:11, color:C.tx3 }}>8 CITIES</span>
+          </div>
+
+          {/* Right controls */}
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             {!user ? (
-              <div style={{display:'flex',gap:8}}>
-                <button onClick={()=>setAuthMode('login')} style={{padding:'8px 18px',borderRadius:6,border:'1px solid rgba(255,255,255,0.3)',background:'rgba(255,255,255,0.1)',color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Sign In</button>
-                <button onClick={()=>setAuthMode('signup')} style={{padding:'8px 18px',borderRadius:6,border:'none',background:ACCENT,color:'#fff',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Register</button>
+              <div style={{ display:'flex', gap:8 }}>
+                <button onClick={()=>setAuthMode('login')}
+                  style={{ padding:'8px 18px', borderRadius:4, border:`1px solid ${C.bdr}`, background:'transparent', color:C.tx2, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit', letterSpacing:'0.04em' }}>
+                  SIGN IN
+                </button>
+                <button onClick={()=>setAuthMode('signup')}
+                  style={{ padding:'8px 18px', borderRadius:4, border:`1px solid ${C.orange}`, background:'rgba(255,107,53,0.1)', color:C.orange, fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit', letterSpacing:'0.04em' }}>
+                  REGISTER
+                </button>
               </div>
             ) : (
-              <div style={{position:'relative'}}>
+              <div ref={menuRef} style={{ position:'relative' }}>
                 <button onClick={()=>setMenuOpen(m=>!m)}
-                  style={{display:'flex',alignItems:'center',gap:9,padding:'8px 14px',borderRadius:6,border:'1px solid rgba(255,255,255,0.2)',background:'rgba(255,255,255,0.08)',color:'#fff',cursor:'pointer',fontFamily:'inherit',fontSize:13,fontWeight:600}}>
-                  <div style={{width:28,height:28,borderRadius:'50%',background:ACCENT,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800}}>{user.name?.[0]?.toUpperCase()||'U'}</div>
-                  {user.name.split(' ')[0]}
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'8px 14px', borderRadius:4, border:`1px solid ${menuOpen?C.cyan:C.bdr}`, background:menuOpen?C.cyan3:'transparent', color:C.tx1, cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:600, letterSpacing:'0.04em', transition:'all 0.2s' }}>
+                  <div style={{ width:28, height:28, borderRadius:4, background:`linear-gradient(135deg,${C.cyan},#0088aa)`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:800, color:C.bg }}>
+                    {user.name?.[0]?.toUpperCase()||'U'}
+                  </div>
+                  <span className="hide-sm">{user.name.split(' ')[0].toUpperCase()}</span>
+                  <motion.span animate={{ rotate:menuOpen?180:0 }} transition={{ duration:0.2 }}>
+                    <Icon name="chevron" size={12} color={C.tx2}/>
+                  </motion.span>
                 </button>
+
+                {/* Dropdown — HIGH z-index, fixed positioning context */}
                 <AnimatePresence>
                   {menuOpen&&(
-                    <motion.div initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0,y:4}}
-                      style={{position:'absolute',right:0,top:'calc(100% + 8px)',width:210,background:bg2,border:`1px solid ${bdr}`,borderRadius:8,boxShadow:'0 8px 24px rgba(0,0,0,0.15)',zIndex:200,overflow:'hidden'}}>
-                      <div style={{padding:'14px 16px',borderBottom:`1px solid ${bdr}`}}>
-                        <div style={{fontSize:13,fontWeight:700,color:txM}}>{user.name}</div>
-                        <div style={{fontSize:11,color:txS,marginTop:2}}>{user.email}</div>
-                        <span style={{fontSize:10,fontWeight:700,color:ACCENT,marginTop:4,display:'inline-block',textTransform:'uppercase',letterSpacing:'0.05em'}}>{user.role==='admin'?'Administrator':'Field Officer'}</span>
+                    <motion.div
+                      initial={{ opacity:0, y:8, scale:0.97 }}
+                      animate={{ opacity:1, y:0, scale:1 }}
+                      exit={{ opacity:0, y:4, scale:0.97 }}
+                      transition={{ duration:0.15 }}
+                      style={{
+                        position:'absolute', right:0, top:'calc(100% + 10px)',
+                        width:220, zIndex:99999,
+                        background:C.bg2,
+                        border:`1px solid ${C.bdr}`,
+                        borderRadius:8,
+                        boxShadow:`0 24px 64px rgba(0,0,0,0.8), 0 0 0 1px ${C.bdr}`,
+                        overflow:'hidden',
+                      }}>
+                      {/* Top accent line */}
+                      <div style={{ height:2, background:`linear-gradient(90deg,${C.cyan},transparent)` }}/>
+                      <div style={{ padding:'14px 16px', borderBottom:`1px solid ${C.bdr2}` }}>
+                        <div style={{ fontSize:13, fontWeight:700, color:C.tx1 }}>{user.name}</div>
+                        <div style={{ fontSize:11, color:C.tx3, marginTop:2 }}>{user.email}</div>
+                        <div className="mono" style={{ fontSize:9, color:C.cyan, marginTop:6, letterSpacing:'0.08em' }}>
+                          {user.role==='admin'?'ADMINISTRATOR':'FIELD OFFICER'}
+                        </div>
                       </div>
                       <button onClick={()=>{logout();setMenuOpen(false)}}
-                        style={{width:'100%',padding:'12px 16px',border:'none',background:'transparent',color:'#dc2626',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',textAlign:'left',display:'flex',alignItems:'center',gap:8}}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-                        Sign Out
+                        style={{ width:'100%', padding:'12px 16px', border:'none', background:'transparent', color:C.red, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', textAlign:'left', display:'flex', alignItems:'center', gap:10, letterSpacing:'0.02em', transition:'background 0.15s' }}
+                        onMouseEnter={e=>e.currentTarget.style.background='rgba(255,61,90,0.06)'}
+                        onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                        <Icon name="logout" size={14} color={C.red}/>
+                        SIGN OUT
                       </button>
                     </motion.div>
                   )}
@@ -396,19 +551,21 @@ export default function App() {
       </header>
 
       {/* NAV */}
-      <nav style={{background:bg2,borderBottom:`1px solid ${bdr}`,boxShadow:T?'0 1px 0 #334155':'0 1px 4px rgba(0,0,0,0.06)',position:'sticky',top:0,zIndex:50}}>
-        <div style={{maxWidth:1400,margin:'0 auto',padding:'0 24px',display:'flex',alignItems:'center',justifyContent:'space-between',height:50}}>
-          <div style={{display:'flex',gap:0}}>
+      <nav style={{ background:C.bg1, borderBottom:`1px solid ${C.bdr2}`, position:'sticky', top:0, zIndex:50 }}>
+        <div style={{ maxWidth:1400, margin:'0 auto', padding:'0 24px', display:'flex', alignItems:'center', justifyContent:'space-between', height:48 }}>
+          <div style={{ display:'flex', gap:0 }}>
             {tabs.map(([id,label])=>(
               <button key={id} onClick={()=>setTab(id)}
-                style={{padding:'0 22px',height:50,border:'none',borderBottom:tab===id?`2px solid ${ACCENT}`:'2px solid transparent',background:'transparent',color:tab===id?ACCENT:txS,fontSize:14,fontWeight:tab===id?700:500,cursor:'pointer',fontFamily:'inherit',transition:'all 0.15s'}}>
+                className="mono"
+                style={{ padding:'0 20px', height:48, border:'none', borderBottom:tab===id?`2px solid ${C.cyan}`:'2px solid transparent', background:'transparent', color:tab===id?C.cyan:C.tx3, fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'var(--mono)', letterSpacing:'0.08em', transition:'all 0.15s', position:'relative' }}>
                 {label}
+                {tab===id&&<motion.div layoutId="nav-indicator" style={{ position:'absolute', bottom:-1, left:0, right:0, height:2, background:C.cyan, boxShadow:`0 0 8px ${C.cyan}` }}/>}
               </button>
             ))}
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:7,fontSize:12,color:txS}}>
-            <span style={{width:7,height:7,borderRadius:'50%',background:'#16a34a',animation:'pulse 2s infinite',display:'inline-block'}}/>
-            <span style={{fontWeight:500}}>Live · {reports.length} incidents tracked</span>
+          <div className="mono hide-sm" style={{ fontSize:10, color:C.tx3, letterSpacing:'0.08em', display:'flex', alignItems:'center', gap:8 }}>
+            <span className="dot-green"/>
+            LIVE MONITORING ACTIVE
           </div>
         </div>
       </nav>
@@ -417,47 +574,57 @@ export default function App() {
       <AnimatePresence>
         {authMode&&(
           <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
-            style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}
+            style={{ position:'fixed', inset:0, background:'rgba(2,9,20,0.92)', zIndex:10000, display:'flex', alignItems:'center', justifyContent:'center', padding:20, backdropFilter:'blur(8px)' }}
             onClick={e=>e.target===e.currentTarget&&setAuthMode(null)}>
-            <motion.div initial={{scale:0.95,y:20}} animate={{scale:1,y:0}} exit={{scale:0.95,y:10}}
-              style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,width:'100%',maxWidth:420,overflow:'hidden',boxShadow:'0 24px 64px rgba(0,0,0,0.25)'}}>
-              <div style={{position:'relative',height:110,overflow:'hidden'}}>
-                <img src={IMGS.road2} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
-                <div style={{position:'absolute',inset:0,background:`linear-gradient(135deg,${BLUE}ee,#1e4d8ccc)`,display:'flex',alignItems:'flex-end',justifyContent:'space-between',padding:'16px 22px'}}>
-                  <div>
-                    <div style={{fontWeight:800,color:'#fff',fontSize:16}}>RoadWatch AI</div>
-                    <div style={{fontSize:10,color:'rgba(255,255,255,0.55)',letterSpacing:'0.05em',textTransform:'uppercase',marginTop:2}}>Secure Government Portal</div>
+            <motion.div initial={{scale:0.93,y:24}} animate={{scale:1,y:0}} exit={{scale:0.93,y:16}}
+              style={{ background:C.bg2, border:`1px solid ${C.bdr}`, borderRadius:8, width:'100%', maxWidth:420, overflow:'hidden', boxShadow:`0 32px 80px rgba(0,0,0,0.9), 0 0 0 1px ${C.bdr}` }}>
+              {/* Header */}
+              <div style={{ background:C.bg3, borderBottom:`1px solid ${C.bdr}`, padding:'20px 24px', display:'flex', alignItems:'center', justifyContent:'space-between', position:'relative' }}>
+                <div style={{ height:2, position:'absolute', top:0, left:0, right:0, background:`linear-gradient(90deg,${C.cyan},${C.orange},transparent)` }}/>
+                <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                  <div style={{ width:36, height:36, borderRadius:6, background:C.cyan3, border:`1px solid ${C.bdr}`, display:'flex', alignItems:'center', justifyContent:'center', color:C.cyan }}>
+                    <Icon name="shield" size={18} color={C.cyan}/>
                   </div>
-                  <button onClick={()=>setAuthMode(null)} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',width:28,height:28,borderRadius:6,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center'}}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  </button>
+                  <div>
+                    <div style={{ fontWeight:800, color:C.tx1, fontSize:15, letterSpacing:'-0.02em' }}>ROADWATCH AI</div>
+                    <div className="mono" style={{ fontSize:9, color:C.tx3, letterSpacing:'0.1em', marginTop:2 }}>SECURE GOVERNMENT PORTAL</div>
+                  </div>
                 </div>
+                <button onClick={()=>setAuthMode(null)} style={{ background:C.bg2, border:`1px solid ${C.bdr}`, color:C.tx3, width:28, height:28, borderRadius:4, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <Icon name="x" size={13} color={C.tx3}/>
+                </button>
               </div>
-              <div style={{display:'flex',borderBottom:`1px solid ${bdr}`}}>
+              {/* Tabs */}
+              <div style={{ display:'flex', borderBottom:`1px solid ${C.bdr2}` }}>
                 {['login','signup'].map(m=>(
                   <button key={m} onClick={()=>{setAuthMode(m);setAuthErr('')}}
-                    style={{flex:1,padding:'13px 0',border:'none',borderBottom:authMode===m?`2px solid ${ACCENT}`:'2px solid transparent',background:'transparent',color:authMode===m?ACCENT:txS,fontSize:14,fontWeight:authMode===m?700:500,cursor:'pointer',fontFamily:'inherit',transition:'all 0.15s'}}>
-                    {m==='login'?'Sign In':'Register'}
+                    className="mono"
+                    style={{ flex:1, padding:'13px 0', border:'none', borderBottom:authMode===m?`2px solid ${C.cyan}`:'2px solid transparent', background:'transparent', color:authMode===m?C.cyan:C.tx3, fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'var(--mono)', letterSpacing:'0.08em', transition:'all 0.15s' }}>
+                    {m==='login'?'SIGN IN':'REGISTER'}
                   </button>
                 ))}
               </div>
-              <form onSubmit={handleAuth} style={{padding:24,display:'flex',flexDirection:'column',gap:14}}>
+              <form onSubmit={handleAuth} style={{ padding:24, display:'flex', flexDirection:'column', gap:14 }}>
                 <AnimatePresence>
                   {authMode==='signup'&&(
                     <motion.div key="name" initial={{opacity:0,height:0}} animate={{opacity:1,height:'auto'}} exit={{opacity:0,height:0}} style={{overflow:'hidden'}}>
-                      <GovField label="Full Name" type="text" placeholder="Enter your full name" value={authForm.name} onChange={e=>setAuthForm(f=>({...f,name:e.target.value}))} T={T} bdr={bdr} required/>
+                      <GovField label="FULL NAME" type="text" placeholder="Enter your full name" value={authForm.name} onChange={e=>setAuthForm(f=>({...f,name:e.target.value}))} required/>
                     </motion.div>
                   )}
                 </AnimatePresence>
-                <GovField label="Email Address" type="email" placeholder="Enter registered email" value={authForm.email} onChange={e=>setAuthForm(f=>({...f,email:e.target.value}))} T={T} bdr={bdr} required/>
-                <GovField label="Password" type="password" placeholder="Minimum 6 characters" value={authForm.password} onChange={e=>setAuthForm(f=>({...f,password:e.target.value}))} T={T} bdr={bdr} required/>
-                {authErr&&<div style={{background:'#fee2e2',border:'1px solid #fca5a5',color:'#dc2626',padding:'10px 14px',borderRadius:6,fontSize:13}}>{authErr}</div>}
+                <GovField label="EMAIL ADDRESS" type="email" placeholder="officer@gov.in" value={authForm.email} onChange={e=>setAuthForm(f=>({...f,email:e.target.value}))} required/>
+                <GovField label="PASSWORD" type="password" placeholder="Minimum 6 characters" value={authForm.password} onChange={e=>setAuthForm(f=>({...f,password:e.target.value}))} required/>
+                {authErr&&(
+                  <div style={{ background:'rgba(255,61,90,0.08)', border:`1px solid rgba(255,61,90,0.2)`, color:C.red, padding:'10px 14px', borderRadius:4, fontSize:12 }}>
+                    {authErr}
+                  </div>
+                )}
                 <button type="submit" disabled={authBusy}
-                  style={{padding:'13px',borderRadius:6,border:'none',background:ACCENT,color:'#fff',fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'inherit',opacity:authBusy?0.7:1}}>
-                  {authBusy?'Please wait…':authMode==='login'?'Sign In →':'Create Account →'}
+                  style={{ padding:'13px', borderRadius:4, border:'none', background:C.orange, color:'#fff', fontWeight:700, fontSize:13, cursor:'pointer', fontFamily:'inherit', opacity:authBusy?0.7:1, letterSpacing:'0.04em' }}>
+                  {authBusy?'PLEASE WAIT…':authMode==='login'?'SIGN IN →':'CREATE ACCOUNT →'}
                 </button>
-                <div style={{textAlign:'center',fontSize:12,color:txS,padding:'10px',background:T?'rgba(255,255,255,0.03)':'#f8fafc',border:`1px solid ${bdr}`,borderRadius:6}}>
-                  Demo: <span style={{color:ACCENT,fontWeight:600}}>demo@roadwatch.ai</span> / <span style={{color:ACCENT,fontWeight:600}}>demo1234</span>
+                <div className="mono" style={{ textAlign:'center', fontSize:10, color:C.tx3, padding:'9px', background:C.cyan3, border:`1px solid ${C.bdr}`, borderRadius:4, letterSpacing:'0.04em' }}>
+                  DEMO ACCESS: <span style={{color:C.cyan}}>demo@roadwatch.ai</span> / <span style={{color:C.cyan}}>demo1234</span>
                 </div>
               </form>
             </motion.div>
@@ -466,210 +633,301 @@ export default function App() {
       </AnimatePresence>
 
       {/* MAIN */}
-      <main style={{maxWidth:1400,margin:'0 auto',padding:'28px 24px'}}>
+      <main style={{ maxWidth:1400, margin:'0 auto', padding:'28px 24px' }}>
         <AnimatePresence mode="wait">
 
-          {/* OVERVIEW */}
+          {/* ══ OVERVIEW ══════════════════════════════════════════════════════ */}
           {tab==='overview'&&(
-            <motion.div key="ov" initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:'flex',flexDirection:'column',gap:22}}>
-              <div style={{position:'relative',borderRadius:12,overflow:'hidden',height:270}}>
-                <img src={IMGS.hero} alt="City" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
-                <div style={{position:'absolute',inset:0,background:`linear-gradient(90deg,${BLUE}f5 0%,${BLUE}cc 55%,transparent 100%)`}}/>
-                <div style={{position:'absolute',inset:0,padding:'32px 40px',display:'flex',flexDirection:'column',justifyContent:'center'}}>
-                  <div style={{display:'inline-flex',alignItems:'center',gap:8,background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:4,padding:'5px 12px',marginBottom:14,width:'fit-content'}}>
-                    <span style={{width:6,height:6,borderRadius:'50%',background:'#4ade80',animation:'pulse 2s infinite',display:'inline-block'}}/>
-                    <span style={{fontSize:11,color:'rgba(255,255,255,0.85)',fontWeight:600,letterSpacing:'0.06em',textTransform:'uppercase'}}>Live · 8 Cities · AI-Powered</span>
-                  </div>
-                  <h1 style={{fontSize:28,fontWeight:900,color:'#fff',letterSpacing:'-0.03em',margin:'0 0 10px',lineHeight:1.15,maxWidth:520}}>Smart Road Intelligence System</h1>
-                  <p style={{fontSize:14,color:'rgba(255,255,255,0.62)',lineHeight:1.75,maxWidth:480,margin:0}}>
-                    AI detects potholes and cracks, assigns risk scores, and helps Municipal Corporations prioritize repairs — saving crores in infrastructure costs.
-                  </p>
-                  {!user&&(
-                    <div style={{display:'flex',gap:12,marginTop:20}}>
-                      <button onClick={()=>setAuthMode('login')} style={{padding:'11px 24px',borderRadius:6,border:'none',background:ACCENT,color:'#fff',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Sign In to Report</button>
-                      <button onClick={()=>setTab('map')} style={{padding:'11px 24px',borderRadius:6,border:'1px solid rgba(255,255,255,0.3)',background:'rgba(255,255,255,0.1)',color:'#fff',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>View Live Map</button>
-                    </div>
-                  )}
-                </div>
-                <div style={{position:'absolute',bottom:20,right:24,display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-                  {[['3,847','Roads Monitored'],['94%','AI Accuracy'],['2.3x','Faster Repairs'],['₹4.2Cr','Cost Saved']].map(([v,l])=>(
-                    <div key={l} style={{background:'rgba(10,20,37,0.75)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:8,padding:'10px 14px',backdropFilter:'blur(8px)',textAlign:'center'}}>
-                      <div style={{fontSize:18,fontWeight:900,color:'#fff',letterSpacing:'-0.04em'}}>{v}</div>
-                      <div style={{fontSize:10,color:'rgba(255,255,255,0.45)',marginTop:2,textTransform:'uppercase',letterSpacing:'0.05em'}}>{l}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            <motion.div key="ov" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} style={{display:'flex',flexDirection:'column',gap:28}}>
 
-              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14}}>
-                <StatCard label="Total Reports"   value={stats?.total??reports.length} icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>} accent={ACCENT} delta={12} bg2={bg2} bdr={bdr} txM={txM} txS={txS}/>
-                <StatCard label="High Risk Zones" value={stats?.high??reports.filter(r=>r.severity==='high').length} icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>} accent="#dc2626" delta={-5} bg2={bg2} bdr={bdr} txM={txM} txS={txS}/>
-                <StatCard label="Pending Repairs" value={stats?.pending??reports.filter(r=>r.status==='Reported').length} icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>} accent="#d97706" bg2={bg2} bdr={bdr} txM={txM} txS={txS}/>
-                <StatCard label="Issues Resolved" value={stats?.resolved??reports.filter(r=>r.status==='Resolved').length} icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>} accent="#16a34a" delta={28} bg2={bg2} bdr={bdr} txM={txM} txS={txS}/>
-              </div>
+              {/* Hero */}
+              <Section>
+                <div style={{ position:'relative', borderRadius:8, overflow:'hidden', border:`1px solid ${C.bdr}`, background:C.bg2, minHeight:280 }}>
+                  {/* Animated grid overlay */}
+                  <div className="grid-bg" style={{ position:'absolute', inset:0, opacity:0.6, pointerEvents:'none' }}/>
+                  {/* Cyan glow orbs */}
+                  <div style={{ position:'absolute', top:'-20%', left:'30%', width:400, height:400, borderRadius:'50%', background:'radial-gradient(circle,rgba(0,212,255,0.06) 0%,transparent 70%)', pointerEvents:'none' }}/>
+                  <div style={{ position:'absolute', bottom:'-30%', right:'10%', width:300, height:300, borderRadius:'50%', background:'radial-gradient(circle,rgba(255,107,53,0.05) 0%,transparent 70%)', pointerEvents:'none' }}/>
 
-              <div style={{display:'grid',gridTemplateColumns:'1.8fr 1fr',gap:18}}>
-                <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,padding:18}}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
-                    <div><div style={{fontWeight:700,fontSize:16,color:txM}}>Live Incident Map</div><div style={{fontSize:12,color:txS,marginTop:2}}>Click any marker to view details</div></div>
-                    <button onClick={()=>setTab('map')} style={{padding:'7px 14px',borderRadius:6,border:`1px solid ${BLUE}`,background:'transparent',color:BLUE,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Full Map →</button>
-                  </div>
-                  <LeafletMapView reports={reports} selectedId={selected} onSelect={setSelected} mapType={mapType} showHeatmap={false}/>
-                </div>
-                <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,padding:18}}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
-                    <div style={{fontWeight:700,fontSize:16,color:txM}}>Recent Reports</div>
-                    <div style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#16a34a',fontWeight:600}}>
-                      <span style={{width:6,height:6,borderRadius:'50%',background:'#16a34a',animation:'pulse 2s infinite',display:'inline-block'}}/>Live
-                    </div>
-                  </div>
-                  <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:380,overflowY:'auto'}}>
-                    {reports.slice(0,8).map((r,i)=>{
-                      const id=r._id??r.id, score=r.riskScore??r.risk??50, color=rc(score)
-                      const [sb,sc,sbr]=(T?sevD:sevL)(r.severity).split(' ')
-                      return (
-                        <motion.div key={id} initial={{opacity:0,x:-6}} animate={{opacity:1,x:0}} transition={{delay:i*0.04}}
-                          onClick={()=>{setSelected(id);setTab('map')}}
-                          style={{display:'flex',alignItems:'center',gap:12,padding:'11px 12px',borderRadius:8,background:T?'rgba(255,255,255,0.02)':'#f8fafc',border:`1px solid ${bdr}`,cursor:'pointer'}}>
-                          <div style={{width:8,height:8,borderRadius:'50%',background:color,flexShrink:0}}/>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:13,fontWeight:600,color:txM,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.location?.name??r.location??'Unknown'}</div>
-                            <div style={{fontSize:11,color:txS,marginTop:2}}>{r.type} · {new Date(r.createdAt??Date.now()).toLocaleDateString('en-IN')}</div>
-                          </div>
-                          <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4,flexShrink:0}}>
-                            <span style={{background:sb,color:sc,border:`1px solid ${sbr}`,padding:'2px 7px',borderRadius:4,fontSize:10,fontWeight:700}}>{(r.severity??'medium').toUpperCase()}</span>
-                            <span style={{fontSize:16,fontWeight:800,color,letterSpacing:'-0.04em'}}>{score}</span>
-                          </div>
+                  {/* Corner decorations */}
+                  <div style={{position:'absolute',top:0,left:0,width:30,height:30,borderTop:`2px solid ${C.cyan}`,borderLeft:`2px solid ${C.cyan}`}}/>
+                  <div style={{position:'absolute',top:0,right:0,width:30,height:30,borderTop:`2px solid ${C.cyan}`,borderRight:`2px solid ${C.cyan}`}}/>
+                  <div style={{position:'absolute',bottom:0,left:0,width:30,height:30,borderBottom:`2px solid ${C.cyan}44`,borderLeft:`2px solid ${C.cyan}44`}}/>
+                  <div style={{position:'absolute',bottom:0,right:0,width:30,height:30,borderBottom:`2px solid ${C.cyan}44`,borderRight:`2px solid ${C.cyan}44`}}/>
+
+                  <div style={{ padding:'40px 48px', position:'relative', zIndex:1, display:'flex', alignItems:'center', justifyContent:'space-between', gap:32 }}>
+                    <div style={{ maxWidth:560 }}>
+                      <div className="label" style={{ marginBottom:16 }}>NATIONAL ROAD INTELLIGENCE SYSTEM</div>
+                      <div style={{ display:'flex', flexDirection:'column', gap:4, marginBottom:16 }}>
+                        {[
+                          ['3.47 Lakh', 'potholes across India'],
+                          ['₹87,000 Cr', 'annual vehicle damage'],
+                          ['1.47 Lakh', 'road accidents per year'],
+                        ].map(([num,label],i)=>(
+                          <motion.div key={num} initial={{opacity:0,x:-20}} animate={{opacity:1,x:0}} transition={{delay:i*0.12+0.2}}
+                            style={{display:'flex',alignItems:'baseline',gap:10}}>
+                            <span className="mono" style={{fontSize:28,fontWeight:900,color:C.cyan,letterSpacing:'-0.04em',lineHeight:1.1}}>{num}</span>
+                            <span style={{fontSize:14,color:C.tx2}}>{label}</span>
+                          </motion.div>
+                        ))}
+                      </div>
+                      <motion.div initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.6}}
+                        style={{fontSize:14,color:C.tx2,lineHeight:1.8,marginBottom:22,borderLeft:`2px solid ${C.orange}`,paddingLeft:14}}>
+                        RoadWatch AI detects, scores, and routes every road hazard to the right authority — automatically. Powered by YOLOv8 · Serving 8 cities.
+                      </motion.div>
+                      {!user&&(
+                        <motion.div initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{delay:0.8}} style={{display:'flex',gap:12}}>
+                          <button onClick={()=>setAuthMode('login')}
+                            style={{padding:'11px 24px',borderRadius:4,border:`1px solid ${C.orange}`,background:'rgba(255,107,53,0.1)',color:C.orange,fontWeight:700,cursor:'pointer',fontFamily:'inherit',fontSize:13,letterSpacing:'0.04em'}}>
+                            ACCESS PORTAL →
+                          </button>
+                          <button onClick={()=>setTab('map')}
+                            style={{padding:'11px 24px',borderRadius:4,border:`1px solid ${C.bdr}`,background:'transparent',color:C.tx2,fontWeight:600,cursor:'pointer',fontFamily:'inherit',fontSize:13,letterSpacing:'0.04em'}}>
+                            VIEW LIVE MAP
+                          </button>
                         </motion.div>
-                      )
-                    })}
+                      )}
+                    </div>
+
+                    {/* Stats panel */}
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, flexShrink:0 }} className="hide-sm">
+                      {[['94%','AI Accuracy','YOLOv8n-CRDDC',C.cyan],['2.3×','Faster Repairs','vs manual survey',C.green],['₹4.2Cr','Cost Saved','per quarter',C.orange],['8 Cities','Coverage','expanding',C.purple]].map(([v,l,sub,c])=>(
+                        <motion.div key={l} initial={{opacity:0,scale:0.9}} animate={{opacity:1,scale:1}} transition={{delay:0.3}}
+                          style={{background:C.bg3,border:`1px solid ${C.bdr}`,borderRadius:6,padding:'14px 16px',position:'relative',overflow:'hidden'}}>
+                          <div style={{position:'absolute',top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${c},transparent)`}}/>
+                          <div className="mono" style={{fontSize:22,fontWeight:700,color:c,letterSpacing:'-0.04em'}}>{v}</div>
+                          <div style={{fontSize:12,color:C.tx2,marginTop:4,fontWeight:600}}>{l}</div>
+                          <div className="mono" style={{fontSize:9,color:C.tx3,marginTop:2}}>{sub}</div>
+                        </motion.div>
+                      ))}
+                    </div>
                   </div>
                 </div>
+              </Section>
+
+              {/* Stats row */}
+              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14}} className="g4">
+                <StatCard label="Total Reports"   value={stats?.total??reports.length}                               icon={<Icon name="pin"    size={18} color={C.orange}/>} accent={C.orange} delta={12} sub={`${reports.filter(r=>r.status==='Reported').length} pending action`}/>
+                <StatCard label="High Risk Zones" value={stats?.high??reports.filter(r=>r.severity==='high').length} icon={<Icon name="alert"  size={18} color={C.red}/>}    accent={C.red}    delta={-5} sub="immediate attention needed"/>
+                <StatCard label="Pending Repairs" value={stats?.pending??reports.filter(r=>r.status==='Reported').length} icon={<Icon name="clock"  size={18} color={C.amber}/>}  accent={C.amber}           sub="awaiting municipal action"/>
+                <StatCard label="Issues Resolved" value={stats?.resolved??reports.filter(r=>r.status==='Resolved').length} icon={<Icon name="check"  size={18} color={C.green}/>}  accent={C.green}  delta={28} sub="successfully closed"/>
               </div>
 
-              <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,padding:22}}>
-                <div style={{fontWeight:700,fontSize:16,color:txM,marginBottom:4}}>Common Road Damage Types We Detect</div>
-                <div style={{fontSize:13,color:txS,marginBottom:18}}>YOLOv8n model trained on CRDDC2022 dataset — 94% accuracy across pothole and crack categories</div>
-                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16}}>
-                  {[[IMGS.p1,'Potholes','Deep depressions caused by water infiltration and traffic load. High accident risk for two-wheelers and vehicles.','#dc2626','High Risk'],[IMGS.crack,'Pavement Cracks','Surface fractures indicating structural weakness. Early detection prevents escalation to full potholes.','#d97706','Medium Risk'],[IMGS.repair,'Road Degradation','General surface wear requiring preventive maintenance before serious structural damage occurs.','#16a34a','Low Risk']].map(([src,title,desc,color,badge])=>(
-                    <div key={title} style={{borderRadius:10,overflow:'hidden',border:`1px solid ${bdr}`}}>
-                      <div style={{position:'relative',height:160}}>
-                        <img src={src} alt={title} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
-                        <div style={{position:'absolute',top:10,right:10,background:color,color:'#fff',padding:'3px 10px',borderRadius:4,fontSize:11,fontWeight:700}}>{badge}</div>
+              {/* Map + Feed */}
+              <Section delay={0.1}>
+                <div style={{display:'grid',gridTemplateColumns:'1.8fr 1fr',gap:18}} className="g21">
+                  <div style={{...CT.card,padding:18}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+                      <div>
+                        <div className="label" style={{marginBottom:4}}>INCIDENT MAP</div>
+                        <div style={{fontSize:13,fontWeight:600,color:C.tx1}}>Live Road Damage Feed</div>
                       </div>
-                      <div style={{padding:'14px 16px'}}>
-                        <div style={{fontWeight:700,fontSize:14,color:txM,marginBottom:5}}>{title}</div>
-                        <div style={{fontSize:12,color:txS,lineHeight:1.6}}>{desc}</div>
+                      <button onClick={()=>setTab('map')} className="mono"
+                        style={{padding:'6px 14px',borderRadius:4,border:`1px solid ${C.bdr}`,background:'transparent',color:C.cyan,fontSize:10,fontWeight:700,cursor:'pointer',fontFamily:'var(--mono)',letterSpacing:'0.08em'}}>
+                        FULL MAP →
+                      </button>
+                    </div>
+                    <LeafletMapView reports={reports} selectedId={selected} onSelect={setSelected} mapType={mapType} showHeatmap={false}/>
+                  </div>
+
+                  <div style={{...CT.card,padding:18,display:'flex',flexDirection:'column'}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+                      <div className="label">LIVE REPORTS</div>
+                      <div style={{display:'flex',alignItems:'center',gap:7}}>
+                        <span className="dot-green"/>
+                        <span className="mono" style={{fontSize:10,color:C.tx3,letterSpacing:'0.06em'}}>LIVE</span>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,overflow:'hidden'}}>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr'}}>
-                  <div style={{padding:'28px 32px',borderRight:`1px solid ${bdr}`}}>
-                    <div style={{fontSize:11,fontWeight:700,color:ACCENT,letterSpacing:'0.07em',textTransform:'uppercase',marginBottom:10}}>Estimated Public Impact</div>
-                    <p style={{fontSize:14,color:txS,lineHeight:1.8,margin:0}}>Based on <strong style={{color:txM}}>{stats?.resolved??reports.filter(r=>r.status==='Resolved').length} resolved incidents</strong>, RoadWatch AI estimates <strong style={{color:txM}}>₹{((stats?.resolved??reports.filter(r=>r.status==='Resolved').length)*12500).toLocaleString('en-IN')}</strong> in vehicle damage prevented and approximately <strong style={{color:txM}}>{Math.round((stats?.resolved??reports.filter(r=>r.status==='Resolved').length)*0.4)} accidents</strong> avoided.</p>
+                    <div style={{display:'flex',flexDirection:'column',gap:8,flex:1,overflowY:'auto',maxHeight:400}}>
+                      {reports.slice(0,10).map((r,i)=>(
+                        <ReportRow key={r._id??r.id} r={r} i={i} selected={selected===(r._id??r.id)} onClick={()=>{setSelected(r._id??r.id);setTab('map')}}/>
+                      ))}
+                    </div>
                   </div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr'}}>
-                    {[['₹'+((stats?.total??reports.length)*8500).toLocaleString('en-IN'),'Vehicle Damage Est.','#dc2626'],['4.2 days','Avg. Response','#d97706'],[`${stats?.total>0?Math.round((stats?.resolved??0)/(stats?.total||1)*100):42}%`,'Completion Rate','#16a34a'],[reports.length.toString(),'Total Incidents','#2563eb']].map(([v,l,c],i)=>(
-                      <div key={l} style={{padding:'20px 24px',borderBottom:i<2?`1px solid ${bdr}`:'none',borderRight:i%2===0?`1px solid ${bdr}`:'none'}}>
-                        <div style={{fontSize:22,fontWeight:800,color:c,letterSpacing:'-0.04em'}}>{v}</div>
-                        <div style={{fontSize:12,color:txS,marginTop:4}}>{l}</div>
-                      </div>
+                </div>
+              </Section>
+
+              {/* Damage types */}
+              <Section delay={0.15}>
+                <div style={{...CT.card,padding:22}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
+                    <div>
+                      <div className="label" style={{marginBottom:4}}>AI DETECTION CAPABILITY</div>
+                      <div style={{fontSize:15,fontWeight:700,color:C.tx1}}>Road Damage Categories</div>
+                    </div>
+                    <div className="mono" style={{fontSize:10,color:C.tx3,background:C.bg3,border:`1px solid ${C.bdr}`,padding:'5px 12px',borderRadius:4,letterSpacing:'0.06em'}}>
+                      YOLOv8n-CRDDC · 94% ACCURACY
+                    </div>
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16}} className="g3">
+                    {[
+                      [C.red,   'POTHOLE',   'Type D1/D40', 'Deep depressions caused by water infiltration and repeated traffic load. Primary cause of vehicle damage and accidents.'],
+                      [C.amber, 'PAVEMENT CRACK','Type D10/D20', 'Surface fractures indicating structural fatigue. Early-stage detection prevents escalation to full pothole failure.'],
+                      [C.green, 'DEGRADATION','Type D00/D01', 'General surface wear requiring preventive maintenance. Proactive treatment reduces long-term repair costs by 60%.'],
+                    ].map(([color,title,code,desc])=>(
+                      <motion.div key={title} whileHover={{y:-4,transition:{duration:0.15}}}
+                        style={{background:C.bg3,border:`1px solid ${C.bdr}`,borderRadius:8,overflow:'hidden',position:'relative'}}>
+                        <div style={{height:4,background:`linear-gradient(90deg,${color},transparent)`}}/>
+                        <div style={{padding:'18px 18px 20px'}}>
+                          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+                            <div style={{width:36,height:36,borderRadius:6,background:color+'15',border:`1px solid ${color}30`,display:'flex',alignItems:'center',justifyContent:'center',color}}>
+                              <Icon name="alert" size={18} color={color}/>
+                            </div>
+                            <span className="mono" style={{fontSize:9,color:C.tx3,letterSpacing:'0.06em'}}>{code}</span>
+                          </div>
+                          <div style={{fontWeight:800,fontSize:14,color:C.tx1,marginBottom:6,letterSpacing:'0.02em'}}>{title}</div>
+                          <div style={{fontSize:12,color:C.tx2,lineHeight:1.65}}>{desc}</div>
+                        </div>
+                      </motion.div>
                     ))}
                   </div>
                 </div>
-              </div>
+              </Section>
+
+              {/* Impact metrics */}
+              <Section delay={0.2}>
+                <div style={{...CT.card,overflow:'hidden'}}>
+                  <div style={{height:2,background:`linear-gradient(90deg,${C.cyan},${C.orange},${C.green},transparent)`}}/>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr'}} className="g21">
+                    <div style={{padding:'28px 32px',borderRight:`1px solid ${C.bdr2}`}}>
+                      <div className="label" style={{marginBottom:12}}>ESTIMATED PUBLIC IMPACT</div>
+                      <div style={{fontSize:14,color:C.tx2,lineHeight:1.85}}>
+                        Based on <strong style={{color:C.tx1}}>{stats?.resolved??reports.filter(r=>r.status==='Resolved').length} resolved incidents</strong>, RoadWatch AI estimates{' '}
+                        <strong style={{color:C.cyan}}>₹{((stats?.resolved??reports.filter(r=>r.status==='Resolved').length)*12500).toLocaleString('en-IN')}</strong> in vehicle damage prevented and approximately{' '}
+                        <strong style={{color:C.green}}>{Math.round((stats?.resolved??reports.filter(r=>r.status==='Resolved').length)*0.4)} accidents</strong> avoided this quarter.
+                      </div>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr'}} className="g2">
+                      {[
+                        ['₹'+((stats?.total??reports.length)*8500).toLocaleString('en-IN'),'Vehicle Damage Est.',C.red],
+                        ['4.2 days','Avg. Response Time',C.amber],
+                        [`${stats?.total>0?Math.round((stats?.resolved??0)/(stats?.total||1)*100):42}%`,'Completion Rate',C.green],
+                        [reports.length,'Active Incidents',C.cyan],
+                      ].map(([v,l,c],i)=>(
+                        <div key={l} style={{padding:'20px 22px',borderBottom:i<2?`1px solid ${C.bdr2}`:'none',borderRight:i%2===0?`1px solid ${C.bdr2}`:'none'}}>
+                          <div className="mono" style={{fontSize:20,fontWeight:700,color:c,letterSpacing:'-0.04em'}}>{v}</div>
+                          <div style={{fontSize:11,color:C.tx3,marginTop:5}}>{l}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </Section>
             </motion.div>
           )}
 
-          {/* MAP */}
+          {/* ══ MAP ══════════════════════════════════════════════════════════ */}
           {tab==='map'&&(
-            <motion.div key="map" initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:'flex',flexDirection:'column',gap:16}}>
-              <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:8,padding:'14px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
+            <motion.div key="map" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} style={{display:'flex',flexDirection:'column',gap:16}}>
+              <div style={{...CT.card,padding:'14px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
                 <div>
-                  <h1 style={{fontSize:20,fontWeight:800,color:txM,margin:0}}>Live Road Damage Map</h1>
-                  <p style={{fontSize:12,color:txS,margin:'4px 0 0'}}>{reports.length} active incidents across 8 Indian cities</p>
+                  <div className="label" style={{marginBottom:4}}>LIVE INCIDENT MAP</div>
+                  <div style={{fontSize:15,fontWeight:700,color:C.tx1}}>{reports.length} Active Incidents · 8 Cities</div>
                 </div>
                 <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                  <div style={{display:'flex',border:`1px solid ${bdr}`,borderRadius:6,overflow:'hidden'}}>
-                    {[['roadmap','Map'],['satellite','Satellite'],['terrain','Terrain']].map(([t,l])=>(
-                      <button key={t} onClick={()=>setMapType(t)} style={{padding:'7px 14px',border:'none',borderRight:`1px solid ${bdr}`,cursor:'pointer',fontFamily:'inherit',fontSize:12,fontWeight:600,background:mapType===t?BLUE:'transparent',color:mapType===t?'#fff':txS,transition:'all 0.15s'}}>{l}</button>
+                  <div style={{display:'flex',border:`1px solid ${C.bdr}`,borderRadius:4,overflow:'hidden'}}>
+                    {[['roadmap','MAP'],['satellite','SAT'],['terrain','TERRAIN']].map(([t,l])=>(
+                      <button key={t} onClick={()=>setMapType(t)} className="mono"
+                        style={{padding:'7px 14px',border:'none',borderRight:`1px solid ${C.bdr}`,cursor:'pointer',fontFamily:'var(--mono)',fontSize:10,fontWeight:700,letterSpacing:'0.06em',
+                          background:mapType===t?C.cyan:C.bg3,color:mapType===t?C.bg:C.tx3,transition:'all 0.15s'}}>
+                        {l}
+                      </button>
                     ))}
                   </div>
-                  <button onClick={()=>setHeatmap(h=>!h)} style={{padding:'7px 14px',borderRadius:6,border:`1px solid ${heatmap?'#dc2626':bdr}`,background:heatmap?(T?'rgba(220,38,38,0.1)':'#fee2e2'):'transparent',color:heatmap?'#dc2626':txS,fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
-                    Heatmap {heatmap?'ON':'OFF'}
+                  <button onClick={()=>setHeatmap(h=>!h)} className="mono"
+                    style={{padding:'7px 14px',borderRadius:4,border:`1px solid ${heatmap?C.red:C.bdr}`,background:heatmap?'rgba(255,61,90,0.1)':C.bg3,color:heatmap?C.red:C.tx3,fontSize:10,fontWeight:700,cursor:'pointer',fontFamily:'var(--mono)',letterSpacing:'0.06em'}}>
+                    HEATMAP {heatmap?'ON':'OFF'}
                   </button>
                 </div>
               </div>
-              <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:8,padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:10}}>
-                <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
-                  {[['#dc2626','High Risk (71–100)'],['#d97706','Medium (31–70)'],['#16a34a','Low (0–30)']].map(([c,l])=>(
-                    <div key={l} style={{display:'flex',alignItems:'center',gap:7,fontSize:12,color:txS}}><span style={{width:10,height:10,borderRadius:'50%',background:c,display:'inline-block'}}/>{l}</div>
+
+              {/* Legend */}
+              <div style={{...CT.card,padding:'10px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
+                <div style={{display:'flex',gap:20,flexWrap:'wrap'}}>
+                  {[[C.red,'HIGH RISK (71-100)'],[C.amber,'MEDIUM (31-70)'],[C.green,'LOW RISK (0-30)']].map(([c,l])=>(
+                    <div key={l} className="mono" style={{display:'flex',alignItems:'center',gap:7,fontSize:9,color:C.tx3,fontWeight:700,letterSpacing:'0.06em'}}>
+                      <span style={{width:8,height:8,borderRadius:'50%',background:c,display:'inline-block',boxShadow:`0 0 6px ${c}`}}/>
+                      {l}
+                    </div>
                   ))}
                 </div>
                 <div style={{display:'flex',gap:6}}>
                   {['all','high','medium','low'].map(s=>(
-                    <button key={s} onClick={()=>setFilterSev(s)} style={{padding:'5px 12px',borderRadius:4,border:`1px solid ${bdr}`,cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:600,background:filterSev===s?BLUE:'transparent',color:filterSev===s?'#fff':txS}}>
-                      {s==='all'?'All':s.charAt(0).toUpperCase()+s.slice(1)}
+                    <button key={s} onClick={()=>setFilterSev(s)} className="mono"
+                      style={{padding:'5px 11px',borderRadius:3,border:`1px solid ${filterSev===s?C.cyan:C.bdr2}`,cursor:'pointer',fontFamily:'var(--mono)',fontSize:9,fontWeight:700,letterSpacing:'0.06em',
+                        background:filterSev===s?C.cyan2:'transparent',color:filterSev===s?C.cyan:C.tx3}}>
+                      {s==='all'?'ALL':s.toUpperCase()}
                     </button>
                   ))}
                 </div>
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 340px',gap:16}}>
-                <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,padding:14}}>
+
+              <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:16}} className="g21">
+                <div style={{...CT.card,padding:14}}>
                   <LeafletMapView reports={reports.filter(r=>filterSev==='all'||(r.severity??'medium')===filterSev)} selectedId={selected} onSelect={setSelected} mapType={mapType} showHeatmap={heatmap}/>
                 </div>
-                <div style={{display:'flex',flexDirection:'column',gap:14}}>
+
+                <div style={{display:'flex',flexDirection:'column',gap:12}}>
                   <AnimatePresence mode="wait">
                     {sel ? (
-                      <motion.div key="det" initial={{opacity:0,x:10}} animate={{opacity:1,x:0}} exit={{opacity:0}} style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,padding:20}}>
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16,paddingBottom:14,borderBottom:`1px solid ${bdr}`}}>
+                      <motion.div key="det" initial={{opacity:0,x:12}} animate={{opacity:1,x:0}} exit={{opacity:0,x:12}}
+                        style={{...CT.card,padding:20,position:'relative',overflow:'hidden'}}>
+                        <div style={{position:'absolute',top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${rc(sel.riskScore??50)},transparent)`}}/>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
                           <div>
-                            <div style={{fontWeight:700,fontSize:15,color:txM}}>{sel.location?.name??sel.location??'Unknown'}</div>
-                            <div style={{fontSize:12,color:txS,marginTop:4}}>{sel.type} · {sel.reporter??'Anonymous'}</div>
+                            <div className="label" style={{marginBottom:4}}>INCIDENT DETAIL</div>
+                            <div style={{fontWeight:700,fontSize:14,color:C.tx1,lineHeight:1.3,maxWidth:220}}>{sel.location?.name??'Unknown'}</div>
+                            <div style={{fontSize:11,color:C.tx3,marginTop:4}}>{sel.type} · {sel.reporter??'Anonymous'}</div>
                           </div>
-                          <button onClick={()=>setSelected(null)} style={{width:28,height:28,borderRadius:6,border:`1px solid ${bdr}`,background:'transparent',color:txS,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          <button onClick={()=>setSelected(null)} style={{background:C.bg3,border:`1px solid ${C.bdr2}`,color:C.tx3,width:26,height:26,borderRadius:4,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                            <Icon name="x" size={12} color={C.tx3}/>
                           </button>
                         </div>
-                        <div style={{background:T?'rgba(255,255,255,0.03)':'#f8fafc',border:`1px solid ${bdr}`,borderRadius:8,padding:16,marginBottom:14,textAlign:'center'}}>
-                          <div style={{fontSize:10,color:txS,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Risk Score</div>
-                          <div style={{fontSize:48,fontWeight:900,color:rc(sel.riskScore??50),letterSpacing:'-0.06em',lineHeight:1}}>{sel.riskScore??sel.risk??50}</div>
-                          <div style={{fontSize:11,color:txS,marginTop:3}}>out of 100</div>
-                          <div style={{height:6,background:T?'#334155':'#f1f5f9',borderRadius:999,overflow:'hidden',marginTop:10}}>
-                            <motion.div initial={{width:0}} animate={{width:`${sel.riskScore??50}%`}} transition={{duration:0.8}} style={{height:'100%',borderRadius:999,background:rc(sel.riskScore??50)}}/>
+
+                        {/* Risk gauge */}
+                        <div style={{background:C.bg3,border:`1px solid ${C.bdr}`,borderRadius:6,padding:'16px',marginBottom:14,textAlign:'center',position:'relative',overflow:'hidden'}}>
+                          <div className="label" style={{justifyContent:'center',marginBottom:8,fontSize:9}}>RISK SCORE</div>
+                          <div className="mono" style={{fontSize:52,fontWeight:900,color:rc(sel.riskScore??50),letterSpacing:'-0.06em',lineHeight:1,textShadow:`0 0 30px ${rc(sel.riskScore??50)}66`}}>
+                            {sel.riskScore??sel.risk??50}
+                          </div>
+                          <div className="mono" style={{fontSize:10,color:C.tx3,marginTop:3,letterSpacing:'0.06em'}}>OUT OF 100</div>
+                          <div style={{height:4,background:C.bg2,borderRadius:999,overflow:'hidden',marginTop:12}}>
+                            <motion.div initial={{width:0}} animate={{width:`${sel.riskScore??50}%`}} transition={{duration:0.8}}
+                              style={{height:'100%',borderRadius:999,background:rc(sel.riskScore??50),boxShadow:`0 0 8px ${rc(sel.riskScore??50)}`}}/>
                           </div>
                         </div>
+
                         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:14}}>
-                          {[['Severity',(sel.severity||'—').toUpperCase(),rc(sel.riskScore??50)],['Confidence',`${((sel.confidence||0.8)*100).toFixed(0)}%`,'#7c3aed'],['Date',new Date(sel.createdAt??Date.now()).toLocaleDateString('en-IN'),null],['Status',sel.status??'Reported',statC(sel.status)]].map(([l,v,c])=>(
-                            <div key={l} style={{background:T?'rgba(255,255,255,0.03)':'#f8fafc',border:`1px solid ${bdr}`,borderRadius:7,padding:'9px 12px'}}>
-                              <div style={{fontSize:10,color:txS,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>{l}</div>
-                              <div style={{fontSize:13,fontWeight:700,color:c||txM}}>{v}</div>
+                          {[['SEVERITY',(sel.severity||'—').toUpperCase(),rc(sel.riskScore??50)],['CONFIDENCE',`${((sel.confidence||0.8)*100).toFixed(0)}%`,C.purple],['DATE',new Date(sel.createdAt??Date.now()).toLocaleDateString('en-IN'),null],['STATUS',sel.status??'Reported',null]].map(([l,v,c])=>(
+                            <div key={l} style={{background:C.bg3,border:`1px solid ${C.bdr2}`,borderRadius:4,padding:'9px 10px'}}>
+                              <div className="label" style={{fontSize:8,marginBottom:4}}>{l}</div>
+                              <div className="mono" style={{fontSize:12,fontWeight:700,color:c||C.tx2}}>{v}</div>
                             </div>
                           ))}
                         </div>
+
                         <div>
-                          <div style={{fontSize:11,color:txS,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Update Status</div>
+                          <div className="label" style={{fontSize:9,marginBottom:8}}>UPDATE STATUS</div>
                           <div style={{display:'flex',gap:6}}>
                             {['Reported','In Progress','Resolved'].map(s=>(
-                              <button key={s} onClick={()=>{if(token)updateStatus(sel._id??sel.id,s);else toast('Sign in to update status','err')}}
-                                style={{flex:1,padding:'8px 4px',borderRadius:6,border:`1px solid ${sel.status===s?BLUE:bdr}`,cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,background:sel.status===s?BLUE:'transparent',color:sel.status===s?'#fff':txS,transition:'all 0.15s'}}>
-                                {s.split(' ')[0]}
+                              <button key={s} onClick={()=>{if(token)updateStatus(sel._id??sel.id,s);else toast('SIGN IN TO UPDATE','err')}}
+                                className="mono"
+                                style={{flex:1,padding:'7px 4px',borderRadius:3,border:`1px solid ${sel.status===s?C.cyan:C.bdr2}`,cursor:'pointer',fontFamily:'var(--mono)',fontSize:9,fontWeight:700,letterSpacing:'0.04em',
+                                  background:sel.status===s?C.cyan2:'transparent',color:sel.status===s?C.cyan:C.tx3,transition:'all 0.15s'}}>
+                                {s.split(' ')[0].toUpperCase()}
                               </button>
                             ))}
                           </div>
                         </div>
                       </motion.div>
                     ) : (
-                      <motion.div key="emp" initial={{opacity:0}} animate={{opacity:1}} style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,padding:28,textAlign:'center'}}>
-                        <div style={{width:48,height:48,borderRadius:10,background:T?'#0f172a':'#f1f5f9',border:`1px solid ${bdr}`,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 14px'}}>
-                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={txS} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                      <motion.div key="emp" initial={{opacity:0}} animate={{opacity:1}}
+                        style={{...CT.card,padding:28,textAlign:'center'}}>
+                        <div style={{width:44,height:44,borderRadius:6,background:C.bg3,border:`1px solid ${C.bdr}`,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 14px',color:C.tx3}}>
+                          <Icon name="pin" size={20} color={C.tx3}/>
                         </div>
-                        <div style={{fontWeight:700,color:txM,fontSize:14,marginBottom:6}}>Select an Incident</div>
-                        <div style={{fontSize:12,color:txS,lineHeight:1.6}}>Click any marker on the map to view full details and update repair status</div>
+                        <div className="label" style={{justifyContent:'center',marginBottom:6,fontSize:9}}>NO INCIDENT SELECTED</div>
+                        <div style={{fontSize:12,color:C.tx3,lineHeight:1.6}}>Click any marker on the map to view full incident details and update repair status</div>
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -678,196 +936,248 @@ export default function App() {
             </motion.div>
           )}
 
-          {/* REPORT */}
+          {/* ══ REPORT ════════════════════════════════════════════════════════ */}
           {tab==='report'&&(
-            <motion.div key="rep" initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} exit={{opacity:0}}>
+            <motion.div key="rep" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
               {!user ? (
-                <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,overflow:'hidden',maxWidth:560,margin:'0 auto'}}>
-                  <div style={{position:'relative',height:160}}>
-                    <img src={IMGS.p2} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
-                    <div style={{position:'absolute',inset:0,background:'rgba(10,20,37,0.72)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24}}>
-                      <div style={{fontWeight:800,fontSize:20,color:'#fff',marginBottom:6}}>Authentication Required</div>
-                      <div style={{fontSize:13,color:'rgba(255,255,255,0.65)'}}>Sign in to submit road damage reports</div>
-                    </div>
+                <div style={{...CT.card,padding:'56px 32px',textAlign:'center',maxWidth:520,margin:'0 auto',position:'relative',overflow:'hidden'}}>
+                  <div style={{position:'absolute',top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${C.orange},transparent)`}}/>
+                  <div className="corner-tl"/><div className="corner-tr"/>
+                  <div style={{width:56,height:56,borderRadius:8,background:'rgba(255,107,53,0.1)',border:`1px solid ${C.orange}30`,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',color:C.orange}}>
+                    <Icon name="shield" size={26} color={C.orange}/>
                   </div>
-                  <div style={{padding:'24px 28px',textAlign:'center'}}>
-                    <p style={{fontSize:14,color:txS,marginBottom:20}}>Sign in with your government credentials to submit reports to the municipal database.</p>
-                    <button onClick={()=>setAuthMode('login')} style={{padding:'12px 32px',borderRadius:6,border:'none',background:ACCENT,color:'#fff',fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'inherit'}}>Sign In Now</button>
-                  </div>
+                  <div className="label" style={{justifyContent:'center',marginBottom:8,fontSize:9}}>AUTHENTICATION REQUIRED</div>
+                  <div style={{fontSize:20,fontWeight:700,color:C.tx1,marginBottom:10}}>Access Restricted</div>
+                  <div style={{fontSize:14,color:C.tx2,marginBottom:24,lineHeight:1.7}}>Sign in with your government credentials to submit road damage reports to the municipal database.</div>
+                  <button onClick={()=>setAuthMode('login')}
+                    style={{padding:'12px 32px',borderRadius:4,border:`1px solid ${C.orange}`,background:'rgba(255,107,53,0.1)',color:C.orange,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',letterSpacing:'0.04em'}}>
+                    SIGN IN TO REPORT →
+                  </button>
                 </div>
               ) : (
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,alignItems:'start'}}>
-                  <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,padding:22}}>
-                    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:18,paddingBottom:14,borderBottom:`1px solid ${bdr}`}}>
-                      <div style={{width:36,height:36,borderRadius:8,overflow:'hidden',flexShrink:0}}>
-                        <img src={IMGS.p1} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,alignItems:'start'}} className="g21">
+                  <div style={{...CT.card,padding:22}}>
+                    <div style={{position:'absolute',top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${C.orange},transparent)`,borderRadius:'8px 8px 0 0'}}/>
+                    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:18,paddingBottom:16,borderBottom:`1px solid ${C.bdr2}`}}>
+                      <div style={{width:36,height:36,borderRadius:6,background:'rgba(255,107,53,0.1)',border:`1px solid ${C.orange}30`,display:'flex',alignItems:'center',justifyContent:'center',color:C.orange}}>
+                        <Icon name="camera" size={18} color={C.orange}/>
                       </div>
                       <div>
-                        <div style={{fontWeight:700,fontSize:15,color:txM}}>Submit Road Damage Report</div>
-                        <div style={{fontSize:12,color:txS}}>AI detection · Risk scoring · GPS tagged</div>
+                        <div className="label" style={{fontSize:9,marginBottom:3}}>DAMAGE REPORTING SYSTEM</div>
+                        <div style={{fontWeight:700,fontSize:14,color:C.tx1}}>Submit Road Damage Report</div>
                       </div>
                     </div>
-                    <UploadPanel token={token} onDone={handleNew} T={T} bg2={bg2} bdr={bdr} txM={txM} txS={txS}/>
+                    <UploadPanel token={token} onDone={handleNew}/>
                   </div>
+
                   <div style={{display:'flex',flexDirection:'column',gap:16}}>
-                    <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,padding:22}}>
-                      <div style={{fontWeight:700,color:txM,fontSize:15,marginBottom:18,display:'flex',alignItems:'center',gap:8}}>
-                        <span style={{width:3,height:18,background:ACCENT,borderRadius:2,display:'inline-block'}}/>How It Works
-                      </div>
-                      {[['Upload Photo','Capture or upload any road photo from your device'],['AI Detection','YOLOv8n-CRDDC identifies potholes and cracks with real bounding boxes'],['Risk Scoring','0–100 score based on damage severity, confidence, and context'],['Authority Alert','Municipal body notified automatically with GPS and risk data']].map(([t,d],idx)=>(
-                        <div key={t} style={{display:'flex',gap:14,marginBottom:idx<3?16:0,paddingBottom:idx<3?16:0,borderBottom:idx<3?`1px solid ${bdr}`:'none'}}>
-                          <div style={{width:28,height:28,borderRadius:'50%',background:ACCENT,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,flexShrink:0}}>{idx+1}</div>
-                          <div><div style={{fontSize:13,fontWeight:700,color:txM,marginBottom:3}}>{t}</div><div style={{fontSize:12,color:txS,lineHeight:1.5}}>{d}</div></div>
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,padding:22}}>
-                      <div style={{fontWeight:700,color:txM,fontSize:15,marginBottom:16,display:'flex',alignItems:'center',gap:8}}>
-                        <span style={{width:3,height:18,background:ACCENT,borderRadius:2,display:'inline-block'}}/>Risk Classification
-                      </div>
-                      {[['71–100','High Risk','#dc2626','Immediate action required. Public safety hazard.','#fef2f2','#fecaca'],['31–70','Medium Risk','#d97706','Repair within 14 days. Monitor closely.','#fffbeb','#fde68a'],['0–30','Low Risk','#16a34a','Schedule routine maintenance within 30 days.','#f0fdf4','#bbf7d0']].map(([r,l,c,d,bg3,bd3])=>(
-                        <div key={r} style={{display:'flex',gap:12,alignItems:'flex-start',marginBottom:10,padding:'11px 14px',background:T?'rgba(255,255,255,0.02)':bg3,border:`1px solid ${T?'rgba(255,255,255,0.07)':bd3}`,borderRadius:7,borderLeft:`4px solid ${c}`}}>
-                          <div>
-                            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}>
-                              <span style={{fontWeight:900,fontSize:15,color:c}}>{r}</span>
-                              <span style={{fontSize:11,fontWeight:700,color:c,background:c+'18',padding:'2px 8px',borderRadius:4}}>{l}</span>
+                    {/* How it works */}
+                    <Section>
+                      <div style={{...CT.card,padding:22}}>
+                        <div className="label" style={{marginBottom:16}}>DETECTION PIPELINE</div>
+                        <div style={{display:'flex',flexDirection:'column',gap:0}}>
+                          {[['01','UPLOAD','Submit any road photo from your device or dashcam footage'],['02','INFERENCE','YOLOv8n-CRDDC identifies potholes and cracks with bounding box precision'],['03','RISK SCORE','Algorithm scores 0–100 based on severity, confidence, and context'],['04','DISPATCH','Municipal authority notified automatically with GPS and risk classification']].map(([num,t,d],idx,arr)=>(
+                            <div key={num} style={{display:'flex',gap:14,paddingBottom:idx<arr.length-1?18:0,marginBottom:idx<arr.length-1?18:0,borderBottom:idx<arr.length-1?`1px solid ${C.bdr2}`:'none'}}>
+                              <div className="mono" style={{width:30,height:30,borderRadius:4,background:C.cyan3,border:`1px solid ${C.bdr}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:C.cyan,flexShrink:0,letterSpacing:'0.04em'}}>
+                                {num}
+                              </div>
+                              <div>
+                                <div style={{fontSize:12,fontWeight:700,color:C.tx1,marginBottom:3,letterSpacing:'0.02em'}}>{t}</div>
+                                <div style={{fontSize:11,color:C.tx3,lineHeight:1.55}}>{d}</div>
+                              </div>
                             </div>
-                            <div style={{fontSize:12,color:txS}}>{d}</div>
-                          </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    </Section>
+
+                    {/* Risk classification */}
+                    <Section delay={0.1}>
+                      <div style={{...CT.card,padding:22}}>
+                        <div className="label" style={{marginBottom:16}}>RISK CLASSIFICATION MATRIX</div>
+                        {[['71–100',C.red,'HIGH RISK','Immediate action. Emergency dispatch to municipal authority.'],['31–70',C.amber,'MEDIUM','Schedule repair within 14 days. Monitoring required.'],['0–30',C.green,'LOW RISK','Routine maintenance cycle. Next scheduled inspection.']].map(([r,c,l,d])=>(
+                          <div key={r} style={{display:'flex',gap:12,alignItems:'center',marginBottom:10,padding:'11px 14px',background:C.bg3,border:`1px solid ${C.bdr2}`,borderRadius:4,borderLeft:`3px solid ${c}`}}>
+                            <div className="mono" style={{fontWeight:900,fontSize:16,color:c,letterSpacing:'-0.04em',minWidth:52}}>{r}</div>
+                            <div style={{borderLeft:`1px solid ${C.bdr2}`,paddingLeft:12}}>
+                              <div style={{fontSize:11,fontWeight:700,color:c,letterSpacing:'0.04em',marginBottom:3}}>{l}</div>
+                              <div style={{fontSize:11,color:C.tx3}}>{d}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </Section>
                   </div>
                 </div>
               )}
             </motion.div>
           )}
 
-          {/* ANALYTICS */}
+          {/* ══ ANALYTICS ════════════════════════════════════════════════════ */}
           {tab==='analytics'&&(
-            <motion.div key="an" initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:'flex',flexDirection:'column',gap:20}}>
-              <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:8,padding:'14px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
-                <div><h1 style={{fontSize:20,fontWeight:800,color:txM,margin:0}}>Analytics & Insights</h1><p style={{fontSize:12,color:txS,margin:'4px 0 0'}}>Data-driven infrastructure policy decisions</p></div>
+            <motion.div key="an" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} style={{display:'flex',flexDirection:'column',gap:20}}>
+              <div style={{...CT.card,padding:'14px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
+                <div>
+                  <div className="label" style={{marginBottom:4}}>ANALYTICS DASHBOARD</div>
+                  <div style={{fontSize:15,fontWeight:700,color:C.tx1}}>Infrastructure Policy Intelligence</div>
+                </div>
                 <div style={{display:'flex',gap:6}}>
                   {['all','Reported','In Progress','Resolved'].map(s=>(
-                    <button key={s} onClick={()=>setFilterStat(s)} style={{padding:'6px 14px',borderRadius:6,border:`1px solid ${bdr}`,cursor:'pointer',fontFamily:'inherit',fontSize:12,fontWeight:600,background:filterStat===s?BLUE:'transparent',color:filterStat===s?'#fff':txS}}>{s==='all'?'All':s}</button>
+                    <button key={s} onClick={()=>setFilterStat(s)} className="mono"
+                      style={{padding:'6px 13px',borderRadius:3,border:`1px solid ${filterStat===s?C.cyan:C.bdr2}`,cursor:'pointer',fontFamily:'var(--mono)',fontSize:9,fontWeight:700,letterSpacing:'0.06em',
+                        background:filterStat===s?C.cyan2:'transparent',color:filterStat===s?C.cyan:C.tx3}}>
+                      {s==='all'?'ALL':s.toUpperCase().replace(' ','_')}
+                    </button>
                   ))}
                 </div>
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14}}>
-                <StatCard label="Total"       value={stats?.total??reports.length}                              accent={ACCENT}  bg2={bg2} bdr={bdr} txM={txM} txS={txS} icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>}/>
-                <StatCard label="High Risk"   value={stats?.high??reports.filter(r=>r.severity==='high').length} accent="#dc2626" bg2={bg2} bdr={bdr} txM={txM} txS={txS} icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}/>
-                <StatCard label="In Progress" value={stats?.inProgress??reports.filter(r=>r.status==='In Progress').length} accent="#d97706" bg2={bg2} bdr={bdr} txM={txM} txS={txS} icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}/>
-                <StatCard label="Resolved"    value={stats?.resolved??reports.filter(r=>r.status==='Resolved').length} accent="#16a34a" delta={28} bg2={bg2} bdr={bdr} txM={txM} txS={txS} icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>}/>
+
+              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14}} className="g4">
+                <StatCard label="Total Reports"  value={stats?.total??reports.length}                               icon={<Icon name="pin"      size={18} color={C.orange}/>} accent={C.orange}/>
+                <StatCard label="High Risk"      value={stats?.high??reports.filter(r=>r.severity==='high').length} icon={<Icon name="alert"    size={18} color={C.red}/>}    accent={C.red}/>
+                <StatCard label="In Progress"    value={stats?.inProgress??reports.filter(r=>r.status==='In Progress').length} icon={<Icon name="activity" size={18} color={C.amber}/>}  accent={C.amber}/>
+                <StatCard label="Resolved"       value={stats?.resolved??reports.filter(r=>r.status==='Resolved').length} icon={<Icon name="check"    size={18} color={C.green}/>}  accent={C.green} delta={28}/>
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:16}}>
-                <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,padding:22}}>
-                  <div style={{fontWeight:700,color:txM,fontSize:15,marginBottom:18}}>Reports vs Resolved — 6 Months</div>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <AreaChart data={trends.length>0?trends:[{month:'Now',reports:reports.length,resolved:reports.filter(r=>r.status==='Resolved').length}]} margin={{top:5,right:5,left:-22,bottom:0}}>
-                      <defs>
-                        <linearGradient id="og" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={ACCENT} stopOpacity={0.2}/><stop offset="95%" stopColor={ACCENT} stopOpacity={0}/></linearGradient>
-                        <linearGradient id="gg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#16a34a" stopOpacity={0.2}/><stop offset="95%" stopColor="#16a34a" stopOpacity={0}/></linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke={T?'#1e293b':'#f1f5f9'}/>
-                      <XAxis dataKey="month" tick={{fill:txS,fontSize:11}} axisLine={false} tickLine={false}/>
-                      <YAxis tick={{fill:txS,fontSize:11}} axisLine={false} tickLine={false}/>
-                      <Tooltip contentStyle={{background:bg2,border:`1px solid ${bdr}`,borderRadius:8,fontSize:13,color:txM}}/>
-                      <Area type="monotone" dataKey="reports" stroke={ACCENT} strokeWidth={2.5} fill="url(#og)" name="Reported"/>
-                      <Area type="monotone" dataKey="resolved" stroke="#16a34a" strokeWidth={2.5} fill="url(#gg)" name="Resolved"/>
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-                <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,padding:22}}>
-                  <div style={{fontWeight:700,color:txM,fontSize:15,marginBottom:16}}>Severity Breakdown</div>
-                  <ResponsiveContainer width="100%" height={150}>
-                    <PieChart>
-                      <Pie data={[{name:'High',value:stats?.bySeverity?.high||reports.filter(r=>r.severity==='high').length||1,color:'#dc2626'},{name:'Medium',value:stats?.bySeverity?.medium||reports.filter(r=>r.severity==='medium').length||1,color:'#d97706'},{name:'Low',value:stats?.bySeverity?.low||reports.filter(r=>r.severity==='low').length||1,color:'#16a34a'}]} cx="50%" cy="50%" innerRadius={36} outerRadius={62} dataKey="value" paddingAngle={3}>
-                        {['#dc2626','#d97706','#16a34a'].map((c,i)=><Cell key={i} fill={c}/>)}
-                      </Pie>
-                      <Tooltip contentStyle={{background:bg2,border:`1px solid ${bdr}`,borderRadius:8,fontSize:13}}/>
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div style={{marginTop:10,display:'flex',flexDirection:'column',gap:8}}>
-                    {[['High','#dc2626',stats?.bySeverity?.high||reports.filter(r=>r.severity==='high').length],['Medium','#d97706',stats?.bySeverity?.medium||reports.filter(r=>r.severity==='medium').length],['Low','#16a34a',stats?.bySeverity?.low||reports.filter(r=>r.severity==='low').length]].map(([l,c,v])=>(
-                      <div key={l} style={{display:'flex',alignItems:'center',justifyContent:'space-between',fontSize:13}}>
-                        <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{width:10,height:10,borderRadius:2,background:c,display:'inline-block'}}/><span style={{color:txS}}>{l} Risk</span></div>
-                        <span style={{fontWeight:700,color:c}}>{v}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 2fr',gap:16}}>
-                <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,padding:22}}>
-                  <div style={{fontWeight:700,color:txM,fontSize:15,marginBottom:18,display:'flex',alignItems:'center',gap:8}}>
-                    <span style={{width:3,height:18,background:'#dc2626',borderRadius:2,display:'inline-block'}}/>Top Danger Zones
-                  </div>
-                  {(topDanger.length>0?topDanger:[...reports].sort((a,b)=>(b.riskScore??0)-(a.riskScore??0))).slice(0,6).map((r,i)=>{
-                    const score=r.riskScore??r.risk??50
-                    return (
-                      <div key={r._id??i} style={{marginBottom:14}}>
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
-                          <div style={{display:'flex',alignItems:'center',gap:8}}>
-                            <span style={{fontSize:10,fontWeight:800,color:txS,width:16,fontFamily:'monospace'}}>#{i+1}</span>
-                            <span style={{fontSize:13,color:txM,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:130}}>{r.location?.name??r.location??'Unknown'}</span>
+
+              <Section>
+                <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:16}} className="g21">
+                  <div style={{...CT.card,padding:22}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
+                      <div className="label">TREND ANALYSIS — 6 MONTHS</div>
+                      <div style={{display:'flex',gap:16}}>
+                        {[[C.cyan,'Reported'],[C.green,'Resolved']].map(([c,l])=>(
+                          <div key={l} className="mono" style={{display:'flex',alignItems:'center',gap:6,fontSize:9,color:C.tx3,fontWeight:700,letterSpacing:'0.06em'}}>
+                            <span style={{width:12,height:3,borderRadius:1,background:c,display:'inline-block'}}/>
+                            {l.toUpperCase()}
                           </div>
-                          <span style={{fontWeight:800,fontSize:14,color:rc(score)}}>{score}</span>
-                        </div>
-                        <div style={{height:5,background:T?'#334155':'#f1f5f9',borderRadius:999,overflow:'hidden'}}>
-                          <motion.div initial={{width:0}} animate={{width:`${score}%`}} transition={{delay:i*0.05+0.2,duration:0.7}} style={{height:'100%',borderRadius:999,background:rc(score)}}/>
-                        </div>
+                        ))}
                       </div>
-                    )
-                  })}
+                    </div>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <AreaChart data={trends.length>0?trends:[{month:'NOW',reports:reports.length,resolved:reports.filter(r=>r.status==='Resolved').length}]} margin={{top:5,right:5,left:-22,bottom:0}}>
+                        <defs>
+                          <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.cyan} stopOpacity={0.25}/><stop offset="95%" stopColor={C.cyan} stopOpacity={0}/></linearGradient>
+                          <linearGradient id="gg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.green} stopOpacity={0.2}/><stop offset="95%" stopColor={C.green} stopOpacity={0}/></linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,212,255,0.05)"/>
+                        <XAxis dataKey="month" tick={{fill:C.tx3,fontSize:10,fontFamily:'var(--mono)',fontWeight:600,letterSpacing:'0.06em'}} axisLine={false} tickLine={false}/>
+                        <YAxis tick={{fill:C.tx3,fontSize:10,fontFamily:'var(--mono)'}} axisLine={false} tickLine={false}/>
+                        <Tooltip contentStyle={{background:C.bg2,border:`1px solid ${C.bdr}`,borderRadius:6,fontSize:12,color:C.tx1,fontFamily:'var(--mono)'}}/>
+                        <Area type="monotone" dataKey="reports"  stroke={C.cyan}  strokeWidth={2} fill="url(#cg)" name="REPORTED"/>
+                        <Area type="monotone" dataKey="resolved" stroke={C.green} strokeWidth={2} fill="url(#gg)" name="RESOLVED"/>
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div style={{...CT.card,padding:22}}>
+                    <div className="label" style={{marginBottom:16}}>SEVERITY DISTRIBUTION</div>
+                    <ResponsiveContainer width="100%" height={150}>
+                      <PieChart>
+                        <Pie data={[
+                          {name:'HIGH',  value:stats?.bySeverity?.high  ||reports.filter(r=>r.severity==='high').length  ||1,color:C.red},
+                          {name:'MEDIUM',value:stats?.bySeverity?.medium||reports.filter(r=>r.severity==='medium').length||1,color:C.amber},
+                          {name:'LOW',   value:stats?.bySeverity?.low   ||reports.filter(r=>r.severity==='low').length   ||1,color:C.green},
+                        ]} cx="50%" cy="50%" innerRadius={38} outerRadius={64} dataKey="value" paddingAngle={4}>
+                          {[C.red,C.amber,C.green].map((c,i)=><Cell key={i} fill={c} opacity={0.9}/>)}
+                        </Pie>
+                        <Tooltip contentStyle={{background:C.bg2,border:`1px solid ${C.bdr}`,borderRadius:6,fontSize:11,fontFamily:'var(--mono)'}}/>
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:8}}>
+                      {[['HIGH',C.red,stats?.bySeverity?.high||reports.filter(r=>r.severity==='high').length],['MEDIUM',C.amber,stats?.bySeverity?.medium||reports.filter(r=>r.severity==='medium').length],['LOW',C.green,stats?.bySeverity?.low||reports.filter(r=>r.severity==='low').length]].map(([l,c,v])=>(
+                        <div key={l} style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                          <div style={{display:'flex',alignItems:'center',gap:7}}>
+                            <span style={{width:8,height:8,borderRadius:2,background:c,display:'inline-block'}}/>
+                            <span className="mono" style={{fontSize:10,color:C.tx3,fontWeight:700,letterSpacing:'0.06em'}}>{l}</span>
+                          </div>
+                          <span className="mono" style={{fontSize:13,fontWeight:700,color:c}}>{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:10,padding:22}}>
-                  <div style={{fontWeight:700,color:txM,fontSize:15,marginBottom:16,display:'flex',alignItems:'center',gap:8}}>
-                    <span style={{width:3,height:18,background:ACCENT,borderRadius:2,display:'inline-block'}}/>All Reports
-                  </div>
-                  <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr 60px',gap:10,padding:'8px',background:T?'rgba(255,255,255,0.03)':'#f8fafc',border:`1px solid ${bdr}`,borderRadius:6,marginBottom:6}}>
-                    {['Location','Type','Severity','Status','Risk'].map(h=><div key={h} style={{fontSize:10,fontWeight:700,color:txS,textTransform:'uppercase',letterSpacing:'0.07em'}}>{h}</div>)}
-                  </div>
-                  <div style={{display:'flex',flexDirection:'column',gap:2,maxHeight:320,overflowY:'auto'}}>
-                    {reports.filter(r=>filterStat==='all'||r.status===filterStat).map(r=>{
-                      const id=r._id??r.id, score=r.riskScore??r.risk??50
-                      const [sb,sc,sbr]=(T?sevD:sevL)(r.severity).split(' ')
-                      return (
-                        <motion.div key={id} whileHover={{background:T?'rgba(255,255,255,0.03)':'#f8fafc'}}
-                          onClick={()=>{setSelected(id);setTab('map')}}
-                          style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr 60px',gap:10,padding:'10px 8px',borderRadius:6,cursor:'pointer',transition:'background 0.12s',borderBottom:`1px solid ${bdr}`}}>
-                          <div style={{fontSize:13,color:txM,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.location?.name??r.location??'Unknown'}</div>
-                          <div style={{fontSize:12,color:txS}}>{r.type}</div>
-                          <span style={{background:sb,color:sc,border:`1px solid ${sbr}`,padding:'2px 7px',borderRadius:4,fontSize:10,fontWeight:700,width:'fit-content',alignSelf:'center'}}>{(r.severity??'med').toUpperCase()}</span>
-                          <div style={{fontSize:12,color:statC(r.status),fontWeight:600}}>{r.status}</div>
-                          <div style={{fontSize:15,fontWeight:800,color:rc(score)}}>{score}</div>
+              </Section>
+
+              <Section delay={0.1}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 2fr',gap:16}} className="g21">
+                  {/* Danger zones */}
+                  <div style={{...CT.card,padding:22}}>
+                    <div className="label" style={{marginBottom:16}}>TOP DANGER ZONES</div>
+                    {(topDanger.length>0?topDanger:[...reports].sort((a,b)=>(b.riskScore??0)-(a.riskScore??0))).slice(0,6).map((r,i)=>{
+                      const score=r.riskScore??r.risk??50
+                      return(
+                        <motion.div key={r._id??i} initial={{opacity:0,x:-8}} animate={{opacity:1,x:0}} transition={{delay:i*0.06}}
+                          style={{marginBottom:14}}>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
+                            <div style={{display:'flex',alignItems:'center',gap:8}}>
+                              <span className="mono" style={{fontSize:9,color:C.tx3,width:14,fontWeight:700}}>{String(i+1).padStart(2,'0')}</span>
+                              <span style={{fontSize:12,color:C.tx2,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:130}}>{r.location?.name??r.location??'Unknown'}</span>
+                            </div>
+                            <span className="mono" style={{fontWeight:900,fontSize:14,color:rc(score),textShadow:`0 0 8px ${rc(score)}66`}}>{score}</span>
+                          </div>
+                          <div style={{height:3,background:C.bg3,borderRadius:999,overflow:'hidden'}}>
+                            <motion.div initial={{width:0}} animate={{width:`${score}%`}} transition={{delay:i*0.06+0.3,duration:0.7}}
+                              style={{height:'100%',borderRadius:999,background:rc(score),boxShadow:`0 0 6px ${rc(score)}`}}/>
+                          </div>
                         </motion.div>
                       )
                     })}
                   </div>
+
+                  {/* Reports table */}
+                  <div style={{...CT.card,padding:22}}>
+                    <div className="label" style={{marginBottom:16}}>ALL REPORTS</div>
+                    <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr 60px',gap:10,padding:'7px 8px',background:C.bg3,border:`1px solid ${C.bdr2}`,borderRadius:4,marginBottom:6}}>
+                      {['LOCATION','TYPE','SEVERITY','STATUS','RISK'].map(h=>(
+                        <div key={h} className="mono" style={{fontSize:9,fontWeight:700,color:C.tx3,letterSpacing:'0.07em'}}>{h}</div>
+                      ))}
+                    </div>
+                    <div style={{display:'flex',flexDirection:'column',gap:2,maxHeight:340,overflowY:'auto'}}>
+                      {reports.filter(r=>filterStat==='all'||r.status===filterStat).map((r,i)=>{
+                        const id=r._id??r.id, score=r.riskScore??r.risk??50
+                        const sevC=r.severity==='high'?'sev-high':r.severity==='medium'?'sev-medium':'sev-low'
+                        const stC=r.status==='Resolved'?'st-resolved':r.status==='In Progress'?'st-progress':'st-reported'
+                        return(
+                          <motion.div key={id} whileHover={{background:'rgba(0,212,255,0.04)'}} onClick={()=>{setSelected(id);setTab('map')}}
+                            style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr 60px',gap:10,padding:'9px 8px',borderRadius:4,cursor:'pointer',transition:'background 0.12s',borderBottom:`1px solid ${C.bdr2}`}}>
+                            <div style={{fontSize:12,color:C.tx2,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.location?.name??r.location??'Unknown'}</div>
+                            <div className="mono" style={{fontSize:10,color:C.tx3,fontWeight:600}}>{r.type?.toUpperCase()}</div>
+                            <span className={sevC} style={{alignSelf:'center',width:'fit-content'}}>{(r.severity??'MED').toUpperCase()}</span>
+                            <span className={stC} style={{alignSelf:'center',width:'fit-content',fontSize:9}}>{(r.status??'Reported').toUpperCase().replace(' ','_')}</span>
+                            <span className="mono" style={{fontSize:14,fontWeight:900,color:rc(score)}}>{score}</span>
+                          </motion.div>
+                        )
+                      })}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </Section>
             </motion.div>
           )}
 
-          {/* SMART FEATURES */}
+          {/* ══ SMART FEATURES ═══════════════════════════════════════════════ */}
           {tab==='features'&&(
-            <motion.div key="ft" initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} exit={{opacity:0}} style={{display:'flex',flexDirection:'column',gap:20}}>
-              <div style={{background:bg2,border:`1px solid ${bdr}`,borderRadius:8,padding:'14px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
-                <div><h1 style={{fontSize:20,fontWeight:800,color:txM,margin:0}}>Smart Features</h1><p style={{fontSize:12,color:txS,margin:'4px 0 0'}}>AI-powered tools for policy makers and municipal administrators</p></div>
-                <div style={{display:'flex',border:`1px solid ${bdr}`,borderRadius:6,overflow:'hidden'}}>
-                  {[['budget','Budget Optimizer','#e85d04'],['wards','Ward Accountability','#1a3c6e'],['predict','Predictive Maintenance','#7c3aed']].map(([id,label,c])=>(
-                    <button key={id} onClick={()=>setFtab(id)}
-                      style={{padding:'8px 18px',border:'none',borderRight:`1px solid ${bdr}`,cursor:'pointer',fontFamily:'inherit',fontSize:13,fontWeight:600,background:ftab===id?c:'transparent',color:ftab===id?'#fff':txS,transition:'all 0.15s',whiteSpace:'nowrap'}}>
+            <motion.div key="ft" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} style={{display:'flex',flexDirection:'column',gap:20}}>
+              <div style={{...CT.card,padding:'14px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
+                <div>
+                  <div className="label" style={{marginBottom:4}}>AI INTELLIGENCE SUITE</div>
+                  <div style={{fontSize:15,fontWeight:700,color:C.tx1}}>Policy Decision Tools</div>
+                </div>
+                <div style={{display:'flex',gap:0,border:`1px solid ${C.bdr}`,borderRadius:4,overflow:'hidden'}}>
+                  {[['budget','BUDGET OPT.',C.orange],['wards','WARD DATA',C.cyan],['predict','PREDICT',C.purple]].map(([id,label,c])=>(
+                    <button key={id} onClick={()=>setFtab(id)} className="mono"
+                      style={{padding:'8px 16px',border:'none',borderRight:`1px solid ${C.bdr2}`,cursor:'pointer',fontFamily:'var(--mono)',fontSize:10,fontWeight:700,letterSpacing:'0.06em',
+                        background:ftab===id?c+'22':'transparent',color:ftab===id?c:C.tx3,transition:'all 0.15s',
+                        borderBottom:ftab===id?`2px solid ${c}`:'2px solid transparent'}}>
                       {label}
                     </button>
                   ))}
                 </div>
               </div>
+
               <AnimatePresence mode="wait">
-                {ftab==='budget'&&<motion.div key="b" initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0}}><BudgetOptimizer token={token} T={T} bg2={bg2} bdr={bdr} txM={txM} txS={txS}/></motion.div>}
-                {ftab==='wards' &&<motion.div key="w" initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0}}><WardAccountability token={token} T={T} bg2={bg2} bdr={bdr} txM={txM} txS={txS}/></motion.div>}
-                {ftab==='predict'&&<motion.div key="p" initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0}}><PredictiveMaintenance token={token} T={T} bg2={bg2} bdr={bdr} txM={txM} txS={txS}/></motion.div>}
+                {ftab==='budget' &&<motion.div key="b" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}><BudgetOptimizer  token={token} T={true} bg2={C.bg2} bdr={C.bdr} txM={C.tx1} txS={C.tx2}/></motion.div>}
+                {ftab==='wards'  &&<motion.div key="w" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}><WardAccountability token={token} T={true} bg2={C.bg2} bdr={C.bdr} txM={C.tx1} txS={C.tx2}/></motion.div>}
+                {ftab==='predict'&&<motion.div key="p" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}><PredictiveMaintenance token={token} T={true} bg2={C.bg2} bdr={C.bdr} txM={C.tx1} txS={C.tx2}/></motion.div>}
               </AnimatePresence>
             </motion.div>
           )}
@@ -876,18 +1186,23 @@ export default function App() {
       </main>
 
       {/* FOOTER */}
-      <footer style={{background:T?'linear-gradient(135deg,#0f1e35,#0a1425)':`linear-gradient(135deg,${BLUE},#1e4d8c)`,marginTop:48,padding:'24px 0',position:'relative',overflow:'hidden'}}>
-        <div style={{position:'absolute',inset:0,backgroundImage:`url(${IMGS.road1})`,backgroundSize:'cover',backgroundPosition:'center',opacity:0.05,pointerEvents:'none'}}/>
-        <div style={{maxWidth:1400,margin:'0 auto',padding:'0 24px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:16,position:'relative',zIndex:1}}>
-          <div>
-            <div style={{fontWeight:700,color:'#fff',fontSize:15}}>RoadWatch AI — Smart Road Intelligence System</div>
-            <div style={{fontSize:11,color:'rgba(255,255,255,0.4)',marginTop:4}}>Powered by YOLOv8 AI · Ministry of Road Transport & Highways · Government of India</div>
+      <footer style={{background:C.bg1,borderTop:`1px solid ${C.bdr2}`,marginTop:48,padding:'20px 0'}}>
+        <div style={{maxWidth:1400,margin:'0 auto',padding:'0 24px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:16}}>
+          <div style={{display:'flex',alignItems:'center',gap:12}}>
+            <div style={{width:28,height:28,borderRadius:4,background:C.cyan3,border:`1px solid ${C.bdr}`,display:'flex',alignItems:'center',justifyContent:'center',color:C.cyan}}>
+              <Icon name="road" size={14} color={C.cyan}/>
+            </div>
+            <div>
+              <div className="mono" style={{fontSize:11,fontWeight:700,color:C.tx1,letterSpacing:'0.04em'}}>ROADWATCH AI — SMART ROAD INTELLIGENCE SYSTEM</div>
+              <div className="mono" style={{fontSize:9,color:C.tx3,letterSpacing:'0.06em',marginTop:2}}>MINISTRY OF ROAD TRANSPORT & HIGHWAYS · DIGITAL INDIA PROGRAMME</div>
+            </div>
           </div>
-          <div style={{fontSize:11,color:'rgba(255,255,255,0.35)',textAlign:'right'}}>
-            <div>© 2024 Government of India · All Rights Reserved</div>
-            <div style={{marginTop:3}}>Built under Digital India Programme</div>
+          <div className="mono" style={{fontSize:9,color:C.tx3,letterSpacing:'0.06em',textAlign:'right'}}>
+            <div>© 2024 GOVERNMENT OF INDIA · ALL RIGHTS RESERVED</div>
+            <div style={{marginTop:3,color:C.tx3}}>POWERED BY YOLOv8 · BUILT ON OPEN-SOURCE STACK</div>
           </div>
         </div>
+        <div style={{height:1,background:`linear-gradient(90deg,transparent,${C.cyan},${C.orange},transparent)`,marginTop:18,opacity:0.3}}/>
       </footer>
     </div>
   )

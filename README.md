@@ -2,6 +2,18 @@
 
 > AI-powered road damage detection for Municipal Corporations, PWD Officers, and Urban Development Authorities across India.
 
+---
+
+## 🚀 Quick Start
+
+### Windows (double-click)
+```
+start.bat
+```
+
+### Linux / macOS
+```bash
+chmod +x start.sh && ./start.sh
 ```
 
 ### Manual
@@ -111,6 +123,16 @@ RoadWatchAI/
 Score = base_severity × 0.6 + confidence_bonus × 0.3 + frequency × 0.1
 Low: 0-30 | Medium: 31-70 | High: 71-100
 ```
+
+---
+
+## 🚢 Deploy (Free)
+
+1. Push to GitHub
+2. **MongoDB Atlas** → free M0 cluster → get connection string
+3. **Render** → backend (Node) + AI service (Python)
+4. **Vercel** → frontend (Vite)
+5. Set env vars on each platform
 
 ---
 

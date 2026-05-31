@@ -1,5 +1,100 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bg:       #020914;
+  --bg1:      #060f1e;
+  --bg2:      #0a1628;
+  --bg3:      #0f1e35;
+  --cyan:     #00d4ff;
+  --cyan2:    rgba(0,212,255,0.15);
+  --cyan3:    rgba(0,212,255,0.06);
+  --orange:   #ff6b35;
+  --green:    #00e676;
+  --red:      #ff3d5a;
+  --amber:    #ffaa00;
+  --purple:   #a78bfa;
+  --bdr:      rgba(0,212,255,0.12);
+  --bdr2:     rgba(255,255,255,0.06);
+  --tx1:      #e8f4fd;
+  --tx2:      rgba(180,210,240,0.6);
+  --tx3:      rgba(100,150,200,0.35);
+  --mono:     'JetBrains Mono', monospace;
+  --shadow:   0 24px 64px rgba(0,0,0,0.7);
+}
+
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{background:#f1f5f9;color:#0f172a;font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
-input,button,select{font-family:inherit}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--tx1);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+input,button,select,textarea{font-family:inherit}
+input:focus{outline:none}
+
+/* Scrollbar */
 ::-webkit-scrollbar{width:4px;height:4px}
-::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15);border-radius:99px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(0,212,255,0.2);border-radius:99px}
+
+/* Animations */
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.8)}}
+@keyframes glow{0%,100%{box-shadow:0 0 6px var(--cyan)}50%{box-shadow:0 0 20px var(--cyan),0 0 40px rgba(0,212,255,0.3)}}
+@keyframes scanline{0%{transform:translateY(-100%)}100%{transform:translateY(200vh)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes countUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes borderGlow{0%,100%{border-color:rgba(0,212,255,0.2)}50%{border-color:rgba(0,212,255,0.5)}}
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+
+/* Grid bg */
+.grid-bg{
+  background-image:linear-gradient(rgba(0,212,255,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,0.025) 1px,transparent 1px);
+  background-size:48px 48px;
+}
+/* Corner decoration */
+.corner-tl{position:absolute;top:0;left:0;width:20px;height:20px;border-top:2px solid var(--cyan);border-left:2px solid var(--cyan)}
+.corner-tr{position:absolute;top:0;right:0;width:20px;height:20px;border-top:2px solid var(--cyan);border-right:2px solid var(--cyan)}
+.corner-bl{position:absolute;bottom:0;left:0;width:20px;height:20px;border-bottom:2px solid var(--cyan);border-left:2px solid var(--cyan)}
+.corner-br{position:absolute;bottom:0;right:0;width:20px;height:20px;border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan)}
+
+/* Section label */
+.label{font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:var(--cyan);display:flex;align-items:center;gap:8px}
+.label::before{content:'';width:14px;height:2px;background:var(--cyan);border-radius:1px;display:inline-block}
+
+/* Status dots */
+.dot-green{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;display:inline-block;box-shadow:0 0 8px var(--green)}
+.dot-red{width:7px;height:7px;border-radius:50%;background:var(--red);animation:pulse 1.2s infinite;display:inline-block;box-shadow:0 0 8px var(--red)}
+.dot-amber{width:7px;height:7px;border-radius:50%;background:var(--amber);animation:pulse 2s infinite;display:inline-block}
+
+/* Severity badges */
+.sev-high{background:rgba(255,61,90,0.15);color:#ff3d5a;border:1px solid rgba(255,61,90,0.3);padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700;letter-spacing:0.06em}
+.sev-medium{background:rgba(255,170,0,0.15);color:#ffaa00;border:1px solid rgba(255,170,0,0.3);padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700;letter-spacing:0.06em}
+.sev-low{background:rgba(0,230,118,0.1);color:#00e676;border:1px solid rgba(0,230,118,0.25);padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700;letter-spacing:0.06em}
+.st-reported{background:rgba(0,212,255,0.12);color:var(--cyan);border:1px solid rgba(0,212,255,0.25);padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600}
+.st-progress{background:rgba(255,170,0,0.12);color:#ffaa00;border:1px solid rgba(255,170,0,0.25);padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600}
+.st-resolved{background:rgba(0,230,118,0.1);color:#00e676;border:1px solid rgba(0,230,118,0.25);padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600}
+
+/* Mono numbers */
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* Leaflet */
+.leaflet-container{background:#020914 !important;font-family:'Inter',sans-serif !important}
+.leaflet-control-zoom a{background:var(--bg2) !important;color:var(--tx2) !important;border-color:var(--bdr) !important}
+.leaflet-control-zoom a:hover{background:var(--bg3) !important;color:var(--cyan) !important}
+.leaflet-control-attribution{background:rgba(2,9,20,0.85) !important;color:var(--tx3) !important;font-size:10px !important}
+.leaflet-control-attribution a{color:var(--tx3) !important}
+.rw-popup .leaflet-popup-content-wrapper{background:transparent !important;border:none !important;box-shadow:0 20px 60px rgba(0,0,0,0.8) !important;border-radius:8px !important;padding:0 !important}
+.rw-popup .leaflet-popup-content{margin:0 !important}
+.rw-popup .leaflet-popup-tip-container{display:none !important}
+
+/* Responsive */
+@media(max-width:1024px){
+  .g4{grid-template-columns:repeat(2,1fr) !important}
+  .g21{grid-template-columns:1fr !important}
+  .g3{grid-template-columns:repeat(2,1fr) !important}
+  .map-sidebar{display:none !important}
+}
+@media(max-width:640px){
+  .g4{grid-template-columns:1fr 1fr !important}
+  .g21,.g3,.g2{grid-template-columns:1fr !important}
+  .hide-sm{display:none !important}
+  main{padding:14px !important}
+}
