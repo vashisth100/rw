@@ -50,4 +50,14 @@ mongoose.connect(process.env.MONGODB_URI||'mongodb://localhost:27017/roadwatch')
     server.listen(PORT,()=>console.log(`🚀 Server → http://localhost:${PORT} (no DB)`))
   })
 
+if (process.env.NODE_ENV === 'production') {
+  const SELF = process.env.RENDER_EXTERNAL_URL
+  if (SELF) {
+    setInterval(() => {
+      fetch(`${SELF}/health`).catch(() => {})
+    }, 14 * 60 * 1000)
+    console.log('✅ Keep-alive active')
+  }
+}
+
 module.exports={app,server}
